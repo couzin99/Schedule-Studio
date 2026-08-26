@@ -1292,6 +1292,24 @@ class ScheduleManager {
         document.getElementById('teacherScheduleModal').classList.remove('hidden');
     }
 
+    formatOfficialProgramSection(sectionName) {
+        const original = String(sectionName || '').trim();
+        const normalized = original.toUpperCase().replace(/[^A-Z0-9]/g, '');
+        const match = normalized.match(/^(BSCE|BSEE|BSME|BSCPE)(\d+)([A-Z])?$/);
+        if (!match) return original;
+        const programs = {
+            BSCE: 'BACHELOR OF SCIENCE IN CIVIL ENGINEERING',
+            BSEE: 'BACHELOR OF SCIENCE IN ELECTRICAL ENGINEERING',
+            BSME: 'BACHELOR OF SCIENCE IN MECHANICAL ENGINEERING',
+            BSCPE: 'BACHELOR OF SCIENCE IN COMPUTER ENGINEERING'
+        };
+        const ordinals = { 1: 'FIRST', 2: 'SECOND', 3: 'THIRD', 4: 'FOURTH', 5: 'FIFTH', 6: 'SIXTH' };
+        const year = Number.parseInt(match[2], 10);
+        const yearName = ordinals[year] || `${year}TH`;
+        const section = match[3] || 'A';
+        return `${programs[match[1]]} ${yearName} YEAR - SECTION ${section}`;
+    }
+
     generateSectionOfficialElement(sectionName) {
         const schedules = this.schedules.filter(s => (s.courseYear || '').toLowerCase() === sectionName.toLowerCase());
         const latestEndMin = schedules.reduce((max, s) => Math.max(max, this.timeToMinutes(s.endTime)), 0);
@@ -1299,6 +1317,7 @@ class ScheduleManager {
         const days = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
         const slots = this.generateTimeSlots().filter(slot => this.timeToMinutes(slot.start) < displayEnd);
         const grid = this.buildScheduleGrid(schedules, days, slots, 'section');
+        const officialSectionName = this.formatOfficialProgramSection(sectionName);
         const container = document.createElement('div');
         container.className = 'section-official-pdf';
         container.style.fontFamily = '"Times New Roman", Times, serif';
@@ -1320,8 +1339,8 @@ class ScheduleManager {
             <div style="text-align:center; font-size:16px; font-weight:700; margin:4px 0 2px;">COLLEGE OF ENGINEERING</div>
             <div style="text-align:center; font-size:14px; margin-bottom:8px;">FIRST SEMESTER 2026-2027</div>
             <div class="section-official-title-row">
-                <div class="section-official-title">${sectionName}</div>
-                <div class="section-official-adviser"><strong>Class Adviser:</strong><br>&nbsp;</div>
+                <div class="section-official-title">${this.escapeHtml(officialSectionName)}</div>
+                <!-- Class Adviser temporarily omitted until adviser management is implemented. -->
             </div>
             <div class="section-official-grid">${grid}</div>
             <div style="display:flex; justify-content:space-between; margin-top:18px; font-size:11px;">
