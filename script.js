@@ -36,7 +36,6 @@ class ScheduleManager {
         this.renderCourseOptions();
         this.renderSectionScheduleOptions();
         this.checkPrereqs();
-        this.showIntroIfNeeded();
         this.initializeAuth();
     }
 
