@@ -3,76 +3,100 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Schedule Manager</title>
+    <title>COE Schedule Studio</title>
     <link rel="stylesheet" href="style.css">
     <link rel="icon" href="assets/logo.png">
 </head>
 <body>
-    <div class="container">
-        <header>
-            <img src="assets/logo.png" alt="College of Engineering logo" class="header-logo">
-            <h1>College of Engineering</h1>
+    <main id="authScreen" class="auth-screen" aria-live="polite">
+        <section class="auth-card">
+            <img src="assets/logo.png" alt="College of Engineering logo" class="auth-logo">
+            <p class="eyebrow">COLLEGE OF ENGINEERING</p>
+            <h1 id="authTitle">Welcome to Schedule Studio</h1>
+            <p id="authSubtitle">Sign in</p>
+            <form id="authForm" class="auth-form">
+                <label for="authName" id="authNameLabel" class="hidden">Full name</label>
+                <input id="authName" class="hidden" type="text" autocomplete="name" placeholder="Full name">
+                <label for="authEmail">Email address</label>
+                <input id="authEmail" type="email" autocomplete="email" placeholder="you@example.com" required>
+                <label for="authPassword">Password</label>
+                <input id="authPassword" type="password" autocomplete="current-password" minlength="8" placeholder="At least 8 characters" required>
+                <button id="authSubmit" class="btn-add" type="submit">Sign in <span>→</span></button>
+            </form>
+            <form id="resetPasswordForm" class="auth-form hidden">
+                <label for="resetPassword">New password</label>
+                <input id="resetPassword" type="password" minlength="8" autocomplete="new-password" placeholder="At least 8 characters" required>
+                <label for="resetPasswordConfirm">Confirm new password</label>
+                <input id="resetPasswordConfirm" type="password" minlength="8" autocomplete="new-password" placeholder="Repeat your password" required>
+                <button class="btn-add" type="submit">Set new password <span>→</span></button>
+            </form>
+            <button id="authModeToggle" class="auth-link" type="button">Need an account? Create one</button>
+            <button id="forgotPasswordBtn" class="auth-link muted-link" type="button">Forgot password?</button>
+            <p id="authMessage" class="auth-message"></p>
+        </section>
+    </main>
+
+    <div id="appShell" class="container hidden">
+        <header class="app-header">
+            <div class="brand">
+                <img src="assets/logo.png" alt="College of Engineering logo" class="header-logo">
+                <div>
+                    <p class="eyebrow">COLLEGE OF ENGINEERING</p>
+                    <h1>SCHEDULE STUDIO</h1>
+                    <p class="header-subtitle">Build conflict-free class schedules with confidence.</p>
+                </div>
+            </div>
+            <div id="remoteControls" class="remote-controls">
+                <div id="userIdentity" class="remote-status hidden"></div>
+                <button id="ownerBackToUsers" type="button" class="btn-clear owner-back-btn hidden">← Back to users</button>
+                <button id="signOutBtn" class="btn-view btn-compact hidden">Sign out</button>
+            </div>
         </header>
+
+        <section class="dashboard" aria-label="Schedule overview">
+            <div class="stat-card"><span class="stat-label">Scheduled classes</span><strong id="scheduleCount">0</strong><span class="stat-note">Across the week</span></div>
+            <div class="stat-card"><span class="stat-label">Active teachers</span><strong id="teacherCount">0</strong><span class="stat-note">With a class assignment</span></div>
+            <div class="stat-card"><span class="stat-label">Rooms in use</span><strong id="roomCount">0</strong><span class="stat-note">Assigned this term</span></div>
+        </section>
+
+        <nav class="view-toggle main-navigation" aria-label="Workspace views">
+            <button class="toggle-btn active" data-view="teacher">DRAFT SCHEDULE</button>
+            <button class="toggle-btn" data-view="manage">MANAGE LISTS</button>
+            <button class="toggle-btn" data-view="all">TEACHERS SCHEDULE</button>
+            <button class="toggle-btn" data-view="students">STUDENTS SCHEDULE</button>
+        </nav>
 
         <div class="main-content">
             <!-- Left Panel: Form -->
             <div class="form-panel">
-                <h2>Add New Schedule</h2>
+                <div class="panel-heading">
+                    <div><p class="eyebrow">SCHEDULER</p></div>
+                    <span class="safe-badge">CONFLICT CHECK ON</span>
+                </div>
+                <p class="panel-description"></p>
                 <form id="scheduleForm">
                     <div class="form-group">
                         <label for="teacherSelect">Teacher:</label>
-                        <div style="display:flex; gap:8px; align-items:center;">
-                            <select id="teacherSelect" required>
-                                <option value="">-- Select Teacher --</option>
-                            </select>
-                            <input type="text" id="newTeacher" placeholder="Add teacher">
-                            <button type="button" id="addTeacherBtn" class="toggle-btn">Add</button>
-                        </div>
+                        <select id="teacherSelect" required>
+                            <option value="">-- Select Teacher --</option>
+                        </select>
                     </div>
 
                     <div class="form-group">
                         <label for="subjectSelect">Subject:</label>
-                        <div style="display:flex; gap:8px; align-items:center;">
-                            <select id="subjectSelect" required>
-                                <option value="">-- Select Subject --</option>
-                            </select>
-                            <input type="text" id="newSubject" placeholder="Add subject">
-                            <button type="button" id="addSubjectBtn" class="toggle-btn">Add</button>
-                        </div>
+                        <select id="subjectSelect" required>
+                            <option value="">-- Select Subject --</option>
+                        </select>
                     </div>
 
                     <div class="form-group">
                         <label for="courseSelect">Course &amp; Year:</label>
-                        <div style="display:flex; gap:8px; align-items:center;">
-                            <select id="courseSelect" required>
-                                <option value="">-- Select Course & Year --</option>
-                            </select>
-                            <input type="text" id="newCourse" placeholder="Add course & year">
-                            <button type="button" id="addCourseBtn" class="toggle-btn">Add</button>
-                        </div>
+                        <select id="courseSelect" required>
+                            <option value="">-- Select Section --</option>
+                        </select>
                     </div>
 
-                    <div class="form-group">
-                        <label for="courseCode">Course Code:</label>
-                        <input type="text" id="courseCode" placeholder="e.g., MATH101">
-                    </div>
-
-                    <div class="form-group">
-                        <label for="units">Units:</label>
-                        <input type="number" id="units" min="0" value="3">
-                    </div>
-
-                    <div class="form-group">
-                        <label for="building">Building:</label>
-                        <input type="text" id="building" placeholder="e.g., Carmel">
-                    </div>
-
-                    <div class="form-group">
-                        <label for="overload">Overload:</label>
-                        <input type="text" id="overload" placeholder="e.g., 1 or leave blank">
-                    </div>
-
-                    <div class="form-group">
+                    <div class="form-group form-grid">
                         <label for="day">Day:</label>
                         <select id="day" required>
                             <option value="">-- Select Day --</option>
@@ -96,18 +120,24 @@
                     </div>
 
                     <div class="form-group">
-                        <label for="roomSelect">Room:</label>
-                        <div style="display:flex; gap:8px; align-items:center;">
-                            <select id="roomSelect" required>
-                                <option value="">-- Select Room --</option>
-                            </select>
-                            <input type="text" id="newRoom" placeholder="Add room">
-                            <button type="button" id="addRoomBtn" class="toggle-btn">Add</button>
-                        </div>
-                        <small id="roomHint" style="color:#666; display:block; margin-top:6px;">Room list updates based on selected day/time.</small>
+                        <label for="buildingSelect">Building:</label>
+                        <select id="buildingSelect" required>
+                            <option value="">-- Select Building --</option>
+                        </select>
                     </div>
 
-                    <button type="submit" class="btn-add">Add Schedule</button>
+                    <div class="form-group">
+                        <label for="roomSelect">Room:</label>
+                        <select id="roomSelect" required>
+                            <option value="">-- Select Room --</option>
+                        </select>
+                        <small id="roomHint" class="room-hint">Pick a day and time to see available rooms.</small>
+                    </div>
+
+                    <div class="schedule-form-actions">
+                        <button type="submit" class="btn-add">Add Schedule <span>→</span></button>
+                        <button type="button" id="clearScheduleBtn" class="btn-clear">Clear</button>
+                    </div>
                 </form>
 
                 <div id="notification" class="notification"></div>
@@ -115,15 +145,9 @@
 
             <!-- Right Panel: Display -->
             <div class="display-panel">
-                <div class="view-toggle">
-                    <button class="toggle-btn active" data-view="teacher">By Teacher</button>
-                    <button class="toggle-btn" data-view="manage">Manage Lists</button>
-                    <button class="toggle-btn" data-view="all">All Schedules</button>
-                </div>
-
                 <!-- Teacher View -->
                 <div id="teacherView" class="view-content active">
-                    <h2>Teacher Schedules</h2>
+                    <div class="view-heading"><div><p class="eyebrow">WORKLOAD VIEW</p><h2>TEACHER SCHEDULES</h2></div><p>Review each instructor’s teaching load.</p></div><br>
                     <div id="teacherList" class="teacher-list">
                         <p class="empty-message">No schedules yet. Add one to get started!</p>
                     </div>
@@ -131,36 +155,78 @@
 
                 <!-- All Schedules View -->
                 <div id="allView" class="view-content">
-                    <h2>All Schedules</h2>
+                    <div class="view-heading"><div><p class="eyebrow">TEACHER TIMETABLE</p><h2>TEACHERS SCHEDULE</h2></div></div><br>
                     <div id="allSchedules" class="all-schedules">
                         <p class="empty-message">No schedules yet. Add one to get started!</p>
                     </div>
                 </div>
 
+                <!-- Student Schedule View -->
+                <div id="studentsView" class="view-content">
+                    <div class="view-heading"><div><p class="eyebrow">PROGRAM TIMETABLES</p><h2>STUDENTS SCHEDULE</h2></div></div><br>
+                    <div id="studentSectionList" class="student-section-list">
+                        <p class="empty-message">No student schedules yet. Add a class to get started!</p>
+                    </div>
+                </div>
+
+                <!-- Owner-only administration view. It is hidden unless the signed-in profile is an owner/school admin. -->
+                <div id="ownerView" class="view-content">
+                    <div class="view-heading"><div><p class="eyebrow">ACCOUNT WORKLOAD</p><h2>USERS SCHEDULES</h2></div></div><br>
+                    <div class="owner-layout">
+                        <aside class="owner-sidebar" aria-label="Owner navigation">
+                            <div class="owner-sidebar-title">WORKSPACE</div>
+                            <button type="button" class="owner-side-btn active" data-owner-panel="users">Registered users</button>
+                            <div class="owner-side-note"></div>
+                        </aside>
+                        <section class="owner-workspace">
+                            <div class="owner-workspace-header"><div><p class="eyebrow">ACCOUNT DIRECTORY</p><h3>Registered users</h3></div><span id="ownerUserCount" class="owner-count">0 accounts</span></div>
+                            <div id="ownerUsersList" class="owner-users-list"><p class="empty-message">Loading registered users…</p></div>
+                            <div id="ownerSelectedPanel" class="owner-selected-panel hidden">
+                                <div class="owner-selected-header"><div><p class="eyebrow">SELECTED ACCOUNT</p><h3 id="ownerSelectedName">User schedule</h3><p id="ownerSelectedEmail"></p></div><button type="button" id="ownerClearSelection" class="btn-clear">Back to users</button></div>
+                                <div id="ownerSelectedSchedules" class="owner-schedules-list"></div>
+                            </div>
+                        </section>
+                    </div>
+                </div>
+
                 <!-- Manage Lists View -->
                 <div id="manageView" class="view-content">
-                    <h2>Manage Teachers & Rooms</h2>
+                    <div class="view-heading"><div><p class="eyebrow">SETUP</p><h2>MANAGE YOUR LISTS</h2></div></div><br>
                     <div class="manage-sections">
                         <div class="manage-section">
-                            <h3>Teachers</h3>
+                            <div class="manage-section-heading"><div><h3>TEACHERS</h3><p>Add instructors available for class assignments.</p></div></div>
+                            <div class="manage-add"><input type="text" id="newTeacher" placeholder="Teacher name"><button type="button" id="addTeacherBtn" class="btn-action">Add teacher</button></div>
                             <div id="teacherListManage" class="manage-list">
                                 <p class="empty-message">No teachers added yet.</p>
                             </div>
                         </div>
                         <div class="manage-section">
-                            <h3>Subjects</h3>
+                            <div class="manage-section-heading"><div><h3>BUILDINGS</h3><p>Add the buildings where rooms are located.</p></div></div>
+                            <div class="manage-add"><input type="text" id="newBuilding" placeholder="Building name"><button type="button" id="addBuildingBtn" class="btn-action">Add building</button></div>
+                            <div id="buildingListManage" class="manage-list">
+                                <p class="empty-message">No buildings added yet.</p>
+                            </div>
+                        </div>
+                        <div class="manage-section">
+                            <div class="manage-section-heading"><div><h3>SUBJECTS</h3><p>Set the default course code and units once.</p></div></div>
+                            <div class="manage-add manage-add-subject"><input type="text" id="newSubject" placeholder="Subject name"><input type="text" id="newSubjectCode" placeholder="Course code"><input type="number" id="newSubjectUnits" min="0" value="3" aria-label="Units"><button type="button" id="addSubjectBtn" class="btn-action">Add subject</button></div>
                             <div id="subjectListManage" class="manage-list">
                                 <p class="empty-message">No subjects added yet.</p>
                             </div>
                         </div>
                         <div class="manage-section">
-                            <h3>Rooms</h3>
+                            <div class="manage-section-heading"><div><h3>ROOMS</h3><p>Pair every room with its building.</p></div></div>
+                            <select id="newRoomBuilding" class="manage-select" aria-label="Building for new room">
+                                <option value="">-- Select building first --</option>
+                            </select>
+                            <div class="manage-add"><input type="text" id="newRoom" placeholder="Room number"><button type="button" id="addRoomBtn" class="btn-action">Add room</button></div>
                             <div id="roomListManage" class="manage-list">
                                 <p class="empty-message">No rooms added yet.</p>
                             </div>
                         </div>
                         <div class="manage-section">
-                            <h3>Courses &amp; Years</h3>
+                            <div class="manage-section-heading"><div><h3>SECTIONS</h3><p>Add class sections.</p></div></div>
+                            <div class="manage-add"><input type="text" id="newCourse" placeholder="e.g., BSCE-1A"><button type="button" id="addCourseBtn" class="btn-action">Add section</button></div>
                             <div id="courseListManage" class="manage-list">
                                 <p class="empty-message">No courses added yet.</p>
                             </div>
@@ -171,15 +237,45 @@
         </div>
     </div>
 
+    <div id="ownerEditModal" class="modal hidden" aria-hidden="true">
+        <div class="modal-content owner-edit-modal-content">
+            <button id="ownerEditClose" class="close-modal" type="button">×</button>
+            <p class="eyebrow">OWNER EDIT</p><h2>Edit scheduled class</h2>
+            <form id="ownerEditForm" class="owner-edit-form">
+                <input type="hidden" id="ownerEditId">
+                <label>Teacher<input id="ownerEditTeacher" required></label><label>Subject<input id="ownerEditSubject" required></label><label>Section<input id="ownerEditSection" required></label>
+                <label>Day<select id="ownerEditDay" required><option>Monday</option><option>Tuesday</option><option>Wednesday</option><option>Thursday</option><option>Friday</option><option>Saturday</option></select></label>
+                <label>Start time<input id="ownerEditStart" type="time" required></label><label>End time<input id="ownerEditEnd" type="time" required></label>
+                <label>Building<input id="ownerEditBuilding"></label><label>Room<input id="ownerEditRoom" required></label>
+                <div class="schedule-form-actions"><button class="btn-add" type="submit">Save changes</button><button class="btn-clear" id="ownerEditCancel" type="button">Cancel</button></div>
+            </form>
+        </div>
+    </div>
+
     <div id="teacherScheduleModal" class="modal hidden">
         <div class="modal-content">
             <button id="closeScheduleModal" class="close-modal">×</button>
             <h2 id="modalTeacherName">Teacher Schedule</h2>
-            <div class="modal-actions" style="margin-bottom:12px; display:flex; gap:8px;">
-                <button id="viewPdfBtn" class="btn-action">View Schedule as PDF</button>
-                <button id="viewLoadBtn" class="btn-action">View Teaching Load as PDF</button>
+            <div class="modal-actions">
+                <button id="viewPdfBtn" class="btn-action">View as PDF</button>
+                <button id="viewSectionOfficialModalBtn" class="btn-action hidden">Official Schedule</button>
+                <button id="viewLoadBtn" class="btn-action">Teaching Load</button>
             </div>
             <div id="scheduleGridContainer"></div>
+        </div>
+    </div>
+
+    <div id="actionModal" class="modal hidden" aria-hidden="true">
+        <div class="modal-content action-modal-content" role="dialog" aria-modal="true" aria-labelledby="actionModalTitle">
+            <button id="actionModalClose" class="close-modal" type="button" aria-label="Close">×</button>
+            <p id="actionModalEyebrow" class="eyebrow">MANAGE LIST</p>
+            <h2 id="actionModalTitle">Edit item</h2>
+            <p id="actionModalMessage" class="action-modal-message"></p>
+            <input id="actionModalInput" class="action-modal-input" type="text">
+            <div class="action-modal-actions">
+                <button id="actionModalCancel" type="button" class="btn-clear">Cancel</button>
+                <button id="actionModalConfirm" type="button" class="btn-add">Confirm</button>
+            </div>
         </div>
     </div>
 
@@ -211,6 +307,20 @@
     <!-- PDF / Canvas libraries -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+
+    <!-- Optional: Supabase client (UMD) + dynamic config loader -->
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js/dist/umd/supabase.min.js"></script>
+    <script>
+    (function(){
+        // Try to load a local supabase-config.js (kept out of repo) and fall back to example
+        function load(src, onload, onerror){
+            var s = document.createElement('script'); s.src = src; s.onload = onload; s.onerror = onerror; document.head.appendChild(s);
+        }
+        window.supabaseConfigReady = new Promise(function(resolve) {
+            load('supabase-config.js', resolve, function(){ load('supabase-config.example.js', resolve, resolve); });
+        });
+    })();
+    </script>
 
     <!-- Fallback loader: some browsers' Tracking Prevention may block CDNs. -->
     <script>

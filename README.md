@@ -142,3 +142,49 @@ python -m http.server 8000
 
 - I can add a small export/import button so your colleague can import schedules easily.
 - Or I can set this up on GitHub Pages or Netlify for you and give you the live link — tell me which you prefer and I will walk you through required credentials.
+
+## Supabase integration (optional)
+
+You can enable remote sync using Supabase so lists (subjects, teachers, rooms, courses) can be shared across devices.
+
+1. Create a project on https://supabase.com and copy the Project URL and ANON public key.
+2. In the project SQL editor create four simple tables (or run these SQL commands):
+
+```sql
+create table subjects (id serial primary key, name text unique);
+create table teachers (id serial primary key, name text unique);
+create table rooms (id serial primary key, name text unique);
+create table courses (id serial primary key, name text unique);
+-- schedules table (optional): store full schedule rows if you want server-side persistence
+create table schedules (
+   id bigint primary key,
+   teacherName text,
+   subject text,
+   courseYear text,
+   courseCode text,
+   units integer,
+   building text,
+   overload text,
+   day text,
+   startTime text,
+   endTime text,
+   room text
+);
+```
+
+3. Copy `supabase-config.example.js` to `supabase-config.js` in the project root and replace the placeholders with your Project URL and ANON key. Keep `supabase-config.js` private (don't commit it).
+
+4. Open the site in a browser. Click **Connect** in the header to paste keys manually, or let the app load `supabase-config.js` if present. Use **Sync Now** to pull lists from Supabase.
+
+Notes:
+- The app tries to preserve the existing local lists and will merge remote names during sync (best-effort).
+- Adding a subject locally will attempt to insert it into the `subjects` table when connected.
+
+## Deploying (Netlify / Vercel)
+
+For a static deployment you can use Netlify or Vercel. If you use environment variables instead of `supabase-config.js`:
+
+- On Netlify set `SUPABASE_URL` and `SUPABASE_ANON_KEY` in Site settings → Build & deploy → Environment.
+- On Vercel set the same in Project Settings → Environment Variables.
+
+If you prefer, deploy the repository as-is and copy `supabase-config.js` into the published site (only for private deployments).

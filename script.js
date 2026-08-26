@@ -6,6 +6,18 @@ class ScheduleManager {
         this.rooms = this.loadRooms();
         this.subjects = this.loadSubjects();
         this.courses = this.loadCourses();
+        this.buildings = this.loadBuildings();
+        this.subjectDetails = this.loadListDetails('subjectDetails');
+        this.roomDetails = this.loadListDetails('roomDetails');
+        this.currentProfile = null;
+        this.isOwner = false;
+        this.ownerProfiles = [];
+        this.ownerSelectedUserId = null;
+        this.ownerViewingUserId = null;
+        this.ownerAllSchedules = [];
+        this.ownerCatalog = {};
+        this.pendingOwnerViewingUserId = sessionStorage.getItem('scheduleStudioOwnerUser') || null;
+        this.buildings = Array.from(new Set([...this.buildings, ...Object.values(this.roomDetails).map(info => info && info.building).filter(Boolean)]));
         this.subjectColors = this.loadSubjectColors();
         this.migrateSchedules();
         this.init();
@@ -13,18 +25,24 @@ class ScheduleManager {
 
     init() {
         this.setupEventListeners();
+        this.initSupabase();
         this.ensureUniqueSubjectColors();
         this.render();
         this.renderTeacherOptions();
         this.renderRoomOptions();
+        this.renderBuildingOptions();
+        this.renderRoomBuildingOptions();
         this.renderSubjectOptions();
         this.renderCourseOptions();
+        this.renderSectionScheduleOptions();
         this.checkPrereqs();
         this.showIntroIfNeeded();
+        this.initializeAuth();
     }
 
     setupEventListeners() {
         document.getElementById('scheduleForm').addEventListener('submit', (e) => this.handleAddSchedule(e));
+        document.getElementById('clearScheduleBtn')?.addEventListener('click', () => this.clearScheduleForm());
         document.querySelectorAll('.toggle-btn').forEach(btn => {
             // view toggles already wired in HTML; keep existing behavior
             btn.addEventListener('click', (e) => {
@@ -34,6 +52,7 @@ class ScheduleManager {
 
         document.getElementById('addTeacherBtn').addEventListener('click', () => this.handleAddTeacher());
         document.getElementById('addRoomBtn').addEventListener('click', () => this.handleAddRoom());
+        document.getElementById('addBuildingBtn').addEventListener('click', () => this.handleAddBuilding());
         const addSubjectBtn = document.getElementById('addSubjectBtn');
         if (addSubjectBtn) addSubjectBtn.addEventListener('click', () => this.handleAddSubject());
         const addCourseBtn = document.getElementById('addCourseBtn');
@@ -50,97 +69,260 @@ class ScheduleManager {
         if (viewLoadBtn) viewLoadBtn.addEventListener('click', () => this.viewTeacherLoadPdf());
 
         // update available rooms when day/time changes
-        ['day', 'startTime', 'endTime'].forEach(id => {
+        ['day', 'startTime', 'endTime', 'buildingSelect'].forEach(id => {
             document.getElementById(id).addEventListener('change', () => this.updateRoomOptions());
         });
 
         // Re-check prerequisites when select lists change
-        ['teacherSelect','subjectSelect','courseSelect','roomSelect'].forEach(id => {
+        ['teacherSelect','subjectSelect','courseSelect','buildingSelect','roomSelect'].forEach(id => {
             const el = document.getElementById(id);
             if (el) el.addEventListener('change', () => this.checkPrereqs());
         });
+
+        // Remote sync controls (optional)
+        const syncBtn = document.getElementById('syncNowBtn');
+        if (syncBtn) syncBtn.addEventListener('click', () => this.syncFromRemote());
+        const connectBtn = document.getElementById('connectRemoteBtn');
+        if (connectBtn) connectBtn.addEventListener('click', () => this.promptForRemoteConfig());
+
+        const authForm = document.getElementById('authForm');
+        if (authForm) authForm.addEventListener('submit', (e) => this.handleAuthSubmit(e));
+        const resetPasswordForm = document.getElementById('resetPasswordForm');
+        if (resetPasswordForm) resetPasswordForm.addEventListener('submit', (e) => this.handleSetNewPassword(e));
+        const authModeToggle = document.getElementById('authModeToggle');
+        if (authModeToggle) authModeToggle.addEventListener('click', () => this.toggleAuthMode());
+        const forgotPasswordBtn = document.getElementById('forgotPasswordBtn');
+        if (forgotPasswordBtn) forgotPasswordBtn.addEventListener('click', () => this.handlePasswordReset());
+        const signOutBtn = document.getElementById('signOutBtn');
+        if (signOutBtn) signOutBtn.addEventListener('click', () => this.signOut());
+        ['actionModalClose', 'actionModalCancel'].forEach(id => document.getElementById(id)?.addEventListener('click', () => this.closeActionModal(false)));
+        document.getElementById('actionModal')?.addEventListener('click', e => { if (e.target.id === 'actionModal') this.closeActionModal(false); });
+        const viewSectionBtn = document.getElementById('viewSectionBtn');
+        if (viewSectionBtn) viewSectionBtn.addEventListener('click', () => {
+            const section = document.getElementById('sectionScheduleSelect').value;
+            if (!section) return this.showNotification('Select a section first.', 'error');
+            this.showSectionSchedule(section);
+        });
+        const viewSectionOfficialModalBtn = document.getElementById('viewSectionOfficialModalBtn');
+        if (viewSectionOfficialModalBtn) viewSectionOfficialModalBtn.addEventListener('click', () => {
+            const section = document.getElementById('teacherScheduleModal')?.dataset.section;
+            if (section) this.viewSectionOfficialPdf(section);
+        });
+        document.getElementById('ownerClearSelection')?.addEventListener('click', () => {
+            this.ownerSelectedUserId = null;
+            this.renderOwnerView();
+        });
+        document.getElementById('ownerEditClose')?.addEventListener('click', () => this.closeOwnerEdit());
+        document.getElementById('ownerEditCancel')?.addEventListener('click', () => this.closeOwnerEdit());
+        document.getElementById('ownerEditForm')?.addEventListener('submit', e => this.saveOwnerEdit(e));
+        document.getElementById('ownerBackToUsers')?.addEventListener('click', () => this.exitOwnerUserView());
     }
 
-    handleAddTeacher() {
+    async handleAddTeacher() {
         const input = document.getElementById('newTeacher');
-        const name = input.value.trim();
+        const name = input.value.trim().toUpperCase();
         if (!name) return this.showNotification('Please enter a teacher name to add.', 'error');
         if (this.teachers.includes(name)) return this.showNotification('Teacher already exists.', 'error');
+        if (!(await this.addListItemToRemote('teachers', name))) return;
         this.teachers.push(name);
         this.saveTeachers();
         input.value = '';
         this.renderTeacherOptions();
+        this.render();
         this.showNotification('Teacher added.', 'success');
         this.checkPrereqs();
     }
 
-    handleAddRoom() {
+    async handleAddRoom() {
         const input = document.getElementById('newRoom');
-        const name = input.value.trim();
+        const name = input.value.trim().toUpperCase();
+        const building = document.getElementById('newRoomBuilding').value.trim().toUpperCase();
         if (!name) return this.showNotification('Please enter a room name to add.', 'error');
+        if (!building) return this.showNotification('Add and select a building before adding a room.', 'error');
         if (this.rooms.includes(name)) return this.showNotification('Room already exists.', 'error');
+        if (!(await this.addListItemToRemote('rooms', { name, building: building || null }))) return;
         this.rooms.push(name);
+        this.roomDetails[name] = { building };
         this.saveRooms();
+        this.saveListDetails('roomDetails', this.roomDetails);
         input.value = '';
         this.renderRoomOptions();
+        this.render();
         this.showNotification('Room added.', 'success');
         this.updateRoomOptions();
         this.checkPrereqs();
     }
 
+    openActionModal({ mode = 'text', title, message = '', value = '', confirmLabel = 'Confirm' }) {
+        return new Promise(resolve => {
+            const modal = document.getElementById('actionModal');
+            const input = document.getElementById('actionModalInput');
+            if (!modal || !input) return resolve(null);
+            document.getElementById('actionModalTitle').textContent = title;
+            document.getElementById('actionModalMessage').textContent = message;
+            document.getElementById('actionModalConfirm').textContent = confirmLabel;
+            input.value = value;
+            input.classList.toggle('hidden', mode !== 'text');
+            modal.classList.remove('hidden');
+            modal.setAttribute('aria-hidden', 'false');
+            const finish = result => { this._actionModalResolver = null; modal.classList.add('hidden'); modal.setAttribute('aria-hidden', 'true'); resolve(result); };
+            this._actionModalResolver = () => finish(mode === 'text' ? input.value : true);
+            this._actionModalCancelResolver = () => finish(null);
+            const confirm = document.getElementById('actionModalConfirm');
+            confirm.onclick = () => this._actionModalResolver?.();
+            input.focus(); input.select();
+        });
+    }
+
+    closeActionModal(result = false) {
+        const resolver = this._actionModalCancelResolver;
+        this._actionModalResolver = null;
+        this._actionModalCancelResolver = null;
+        if (resolver) resolver();
+        else document.getElementById('actionModal')?.classList.add('hidden');
+    }
+
+    handleAddBuilding() {
+        const input = document.getElementById('newBuilding');
+        const name = input.value.trim().toUpperCase();
+        if (!name) return this.showNotification('Please enter a building name to add.', 'error');
+        if (this.buildings.some(b => b.toLowerCase() === name.toLowerCase())) return this.showNotification('Building already exists.', 'error');
+        this.buildings.push(name);
+        this.saveBuildings();
+        input.value = '';
+        this.renderBuildingOptions();
+        this.renderRoomBuildingOptions();
+        this.render();
+        this.showNotification('Building added.', 'success');
+    }
+
     // Subjects & Courses
-    handleAddSubject() {
+    async handleAddSubject() {
         const input = document.getElementById('newSubject');
-        const name = input.value.trim();
+        const name = input.value.trim().toUpperCase();
+        const courseCode = document.getElementById('newSubjectCode').value.trim().toUpperCase();
+        const unitsInput = document.getElementById('newSubjectUnits').value;
+        const units = unitsInput === '' ? 3 : Number.parseInt(unitsInput, 10);
         if (!name) return this.showNotification('Please enter a subject to add.', 'error');
         if (this.subjects.includes(name)) return this.showNotification('Subject already exists.', 'error');
+        if (!Number.isFinite(units) || units < 0) return this.showNotification('Units must be zero or greater.', 'error');
+        if (!(await this.addListItemToRemote('subjects', { name, course_code: courseCode || null, units }))) return;
         this.subjects.push(name);
+        this.subjectDetails[name] = { courseCode, units };
         this.saveSubjects();
+        this.saveListDetails('subjectDetails', this.subjectDetails);
         // Ensure newly added subject receives a unique color
         this.ensureUniqueSubjectColors();
         input.value = '';
+        document.getElementById('newSubjectCode').value = '';
+        document.getElementById('newSubjectUnits').value = '3';
         this.renderSubjectOptions();
+        this.render();
         this.showNotification('Subject added.', 'success');
         this.checkPrereqs();
     }
 
-    handleAddCourse() {
+    async handleEditBuilding(buildingName) {
+        const next = await this.openActionModal({ title: 'Rename building', message: 'Enter a new name for this building.', value: buildingName, confirmLabel: 'Save changes' });
+        if (next === null) return;
+        const name = next.trim().toUpperCase();
+        if (!name || name === buildingName) return;
+        if (this.buildings.some(b => b.toLowerCase() === name.toLowerCase())) return this.showNotification('Building already exists.', 'error');
+        const index = this.buildings.indexOf(buildingName);
+        if (index < 0) return;
+        this.buildings[index] = name;
+        Object.keys(this.roomDetails).forEach(room => {
+            if ((this.roomDetails[room] || {}).building === buildingName) this.roomDetails[room].building = name;
+        });
+        this.saveBuildings();
+        this.saveListDetails('roomDetails', this.roomDetails);
+        this.renderBuildingOptions();
+        this.renderRoomBuildingOptions();
+        this.render();
+        this.showNotification('Building updated.', 'success');
+    }
+
+    async handleDeleteBuilding(buildingName) {
+        const assignedRooms = this.rooms.filter(room => (this.roomDetails[room] || {}).building === buildingName);
+        const relatedSchedules = this.schedules.filter(schedule => assignedRooms.includes(schedule.room));
+        const message = assignedRooms.length
+            ? `${buildingName} contains ${assignedRooms.length} room(s) and ${relatedSchedules.length} related schedule(s). Deleting it will remove all of them.`
+            : `This will remove ${buildingName}.`;
+        if (!await this.openActionModal({ mode: 'confirm', title: assignedRooms.length ? 'Delete building and assigned rooms?' : 'Delete building?', message, confirmLabel: assignedRooms.length ? 'Delete all' : 'Delete' })) return;
+        if (this.remoteEnabled && this.supabase) {
+            const ownerScope = this.ownerViewingUserId || this.currentUser?.id;
+            if (assignedRooms.length) {
+                let roomDelete = this.supabase.from('rooms').delete().in('name', assignedRooms);
+                if (ownerScope) roomDelete = roomDelete.eq('owner_id', ownerScope);
+                const { error } = await roomDelete;
+                if (error) return this.showNotification(error.message || 'Unable to delete the assigned rooms.', 'error');
+            }
+            if (relatedSchedules.length) {
+                let scheduleDelete = this.supabase.from('schedules').delete().in('id', relatedSchedules.map(schedule => schedule.id));
+                if (ownerScope) scheduleDelete = scheduleDelete.eq('owner_id', ownerScope);
+                const { error } = await scheduleDelete;
+                if (error) return this.showNotification(error.message || 'Unable to delete related schedules.', 'error');
+            }
+        }
+        this.schedules = this.schedules.filter(schedule => !relatedSchedules.includes(schedule));
+        this.rooms = this.rooms.filter(room => !assignedRooms.includes(room));
+        assignedRooms.forEach(room => delete this.roomDetails[room]);
+        this.saveRooms();
+        this.saveSchedules();
+        this.saveListDetails('roomDetails', this.roomDetails);
+        this.buildings = this.buildings.filter(building => building !== buildingName);
+        this.saveBuildings();
+        this.renderBuildingOptions();
+        this.renderRoomBuildingOptions();
+        this.render();
+        this.showNotification('Building deleted.', 'success');
+    }
+
+    async handleAddCourse() {
         const input = document.getElementById('newCourse');
-        const name = input.value.trim();
-        if (!name) return this.showNotification('Please enter a course & year to add.', 'error');
-        if (this.courses.includes(name)) return this.showNotification('Course already exists.', 'error');
+        const name = input.value.trim().toUpperCase();
+        if (!name) return this.showNotification('Please enter a section to add.', 'error');
+        if (this.courses.includes(name)) return this.showNotification('Section already exists.', 'error');
+        if (!(await this.addListItemToRemote('courses', name))) return;
         this.courses.push(name);
         this.saveCourses();
         input.value = '';
         this.renderCourseOptions();
-        this.showNotification('Course added.', 'success');
+        this.renderSectionScheduleOptions();
+        this.render();
+        this.showNotification('Section added.', 'success');
         this.checkPrereqs();
     }
 
-    handleAddSchedule(e) {
+    async handleAddSchedule(e) {
         e.preventDefault();
 
         const teacherName = document.getElementById('teacherSelect').value;
         const subject = document.getElementById('subjectSelect').value;
         const courseYear = document.getElementById('courseSelect').value;
+        const building = document.getElementById('buildingSelect').value;
         const day = document.getElementById('day').value;
         const startTime = document.getElementById('startTime').value;
         const endTime = document.getElementById('endTime').value;
         const room = document.getElementById('roomSelect').value;
-        const courseCode = (document.getElementById('courseCode') && document.getElementById('courseCode').value) ? document.getElementById('courseCode').value.trim() : '';
-        const unitsVal = (document.getElementById('units') && document.getElementById('units').value) ? parseInt(document.getElementById('units').value, 10) : 3;
-        const building = (document.getElementById('building') && document.getElementById('building').value) ? document.getElementById('building').value.trim() : '';
-        const overload = (document.getElementById('overload') && document.getElementById('overload').value) ? document.getElementById('overload').value.trim() : '';
+        const subjectInfo = this.subjectDetails[subject] || {};
+        const roomInfo = this.roomDetails[room] || {};
+        const courseCode = subjectInfo.courseCode || '';
+        const parsedUnits = Number.parseInt(subjectInfo.units, 10);
+        const unitsVal = Number.isFinite(parsedUnits) ? parsedUnits : 3;
+        const selectedBuilding = building || roomInfo.building || '';
+        const checker = this.checkConflicts({teacherName, subject, courseYear, day, startTime, endTime, room});
 
         const schedule = {
             id: Date.now(),
+            ownerId: this.ownerViewingUserId || this.currentUser?.id || '',
             teacherName,
             subject,
             courseYear,
             courseCode,
             units: unitsVal,
-            building,
-            overload,
+            building: selectedBuilding,
+            overload: '',
             day,
             startTime,
             endTime,
@@ -164,8 +346,32 @@ class ScheduleManager {
             return;
         }
 
-        // Add schedule
+        // Store the schedule in the signed-in user's private Supabase records first.
+        if (this.remoteEnabled) {
+            const { data, error } = await this.supabase.from('schedules').insert({
+                owner_id: this.ownerViewingUserId || this.currentUser?.id,
+                teacher_name: schedule.teacherName,
+                subject: schedule.subject,
+                course_year: schedule.courseYear,
+                course_code: schedule.courseCode || null,
+                units: schedule.units,
+                building: schedule.building || null,
+                overload: null,
+                day: schedule.day,
+                start_time: schedule.startTime,
+                end_time: schedule.endTime,
+                room: schedule.room
+            }).select().single();
+            if (error) {
+                this.showNotification(error.message || 'Unable to save this schedule.', 'error');
+                return;
+            }
+            schedule.id = data.id;
+        }
+
+        // Add schedule locally after the database accepts it
         this.schedules.push(schedule);
+        if (this.ownerViewingUserId) this.ownerAllSchedules.push(schedule);
         this.saveSchedules();
         this.showNotification('✓ Schedule added successfully!', 'success');
         document.getElementById('scheduleForm').reset();
@@ -193,9 +399,21 @@ class ScheduleManager {
     }
 
     // returns structured conflict info
-    checkConflicts(newSchedule) {
+    checkConflicts(newSchedule, excludeId = null) {
         const conflicts = [];
         for (const schedule of this.schedules) {
+            if (excludeId !== null && String(schedule.id) === String(excludeId)) continue;
+            // A section may only take a subject once. The same subject can still
+            // be assigned to other sections, so both values must match.
+            if (schedule.courseYear && newSchedule.courseYear && schedule.subject && newSchedule.subject &&
+                schedule.courseYear.trim().toLowerCase() === newSchedule.courseYear.trim().toLowerCase() &&
+                schedule.subject.trim().toLowerCase() === newSchedule.subject.trim().toLowerCase()) {
+                conflicts.push({
+                    type: 'Duplicate subject',
+                    message: `${newSchedule.subject} is already assigned to ${newSchedule.courseYear}. A section cannot have the same subject more than once.`
+                });
+            }
+
             if (schedule.day !== newSchedule.day) continue;
 
             // teacher conflict
@@ -217,6 +435,15 @@ class ScheduleManager {
                         message: `${schedule.room} is already in use by ${schedule.teacherName} for ${schedule.subject} from ${this.formatTime(schedule.startTime)} to ${this.formatTime(schedule.endTime)}.`
                     });
                 }
+            }
+
+            if (schedule.courseYear && newSchedule.courseYear &&
+                schedule.courseYear.trim().toLowerCase() === newSchedule.courseYear.trim().toLowerCase() &&
+                this.timesOverlap(schedule.startTime, schedule.endTime, newSchedule.startTime, newSchedule.endTime)) {
+                conflicts.push({
+                    type: 'Section conflict',
+                    message: `${schedule.courseYear} already has ${schedule.subject} with ${schedule.teacherName} from ${this.formatTime(schedule.startTime)} to ${this.formatTime(schedule.endTime)}.`
+                });
             }
         }
 
@@ -264,27 +491,85 @@ class ScheduleManager {
         return conflicts;
     }
 
-    deleteSchedule(id) {
-        if (confirm('Are you sure you want to delete this schedule?')) {
-            this.schedules = this.schedules.filter(s => s.id !== id);
-            this.saveSchedules();
-            this.render();
-            this.showNotification('Schedule deleted.', 'success');
-            this.updateRoomOptions();
+    getAllConflicts() {
+        const conflicts = [];
+        const same = (a, b) => (a || '').trim().toLowerCase() === (b || '').trim().toLowerCase();
+        for (let i = 0; i < this.schedules.length; i++) {
+            for (let j = i + 1; j < this.schedules.length; j++) {
+                const a = this.schedules[i];
+                const b = this.schedules[j];
+                if (a.day !== b.day || !this.timesOverlap(a.startTime, a.endTime, b.startTime, b.endTime)) continue;
+                if (same(a.teacherName, b.teacherName)) conflicts.push({ type: 'teacher', a, b });
+                if (same(a.room, b.room)) conflicts.push({ type: 'room', a, b });
+                if (a.courseYear && b.courseYear && same(a.courseYear, b.courseYear)) conflicts.push({ type: 'section', a, b });
+            }
         }
+        return conflicts;
+    }
+
+    async deleteSchedule(id) {
+        const schedule = this.schedules.find(item => String(item.id) === String(id));
+        const label = schedule ? `${schedule.subject} for ${schedule.courseYear}` : 'this schedule';
+        const confirmed = await this.openActionModal({ mode: 'confirm', title: 'Delete schedule?', message: `Are you sure you want to delete ${label}? This action cannot be undone.`, confirmLabel: 'Delete schedule' });
+        if (!confirmed) return;
+        if (this.remoteEnabled && this.currentUser) {
+            const { error } = await this.supabase.from('schedules').delete().eq('id', id);
+            if (error) return this.showNotification(error.message || 'Unable to delete this schedule.', 'error');
+        }
+        this.schedules = this.schedules.filter(s => s.id !== id);
+        if (this.ownerViewingUserId) this.ownerAllSchedules = this.ownerAllSchedules.filter(s => s.id !== id);
+        this.saveSchedules();
+        this.render();
+        this.showNotification('Schedule deleted.', 'success');
+        this.updateRoomOptions();
     }
 
     render() {
+        this.renderDashboard();
         this.renderTeacherView();
         this.renderAllView();
+        this.renderStudentsView();
         this.renderManageView();
+        this.renderOwnerView();
+    }
+
+    renderDashboard() {
+        const unique = (field) => new Set(this.schedules.map(s => (s[field] || '').trim().toLowerCase()).filter(Boolean)).size;
+        const allConflicts = this.getAllConflicts();
+        const setText = (id, value) => {
+            const el = document.getElementById(id);
+            if (el) el.textContent = value;
+        };
+        const setFraction = (id, numerator, denominator) => {
+            const el = document.getElementById(id);
+            if (el) el.innerHTML = `<span class="stat-ratio"><b>${numerator}</b><span>of ${denominator}</span></span>`;
+        };
+        setText('scheduleCount', this.schedules.length);
+        setFraction('teacherCount', unique('teacherName'), this.teachers.length);
+        setFraction('roomCount', unique('room'), this.rooms.length);
+        const statCards = document.querySelectorAll('.dashboard .stat-card');
+        if (this.isOwner) {
+            const labels = ['Registered users', 'Active teachers', 'Rooms in use'];
+            const notes = ['', '', ''];
+            statCards.forEach((card, index) => {
+                card.classList.toggle('owner-hidden-stat', index > 0);
+                const label = card.querySelector('.stat-label');
+                const note = card.querySelector('.stat-note');
+                if (index === 0) { if (label) label.textContent = labels[0]; if (note) note.textContent = notes[0]; }
+            });
+            setText('scheduleCount', this.ownerProfiles.filter(profile => !['owner', 'school_admin'].includes(String(profile.role || '').toLowerCase())).length);
+        }
+        setText('scheduleHealth', allConflicts.length ? 'Needs review' : 'Ready');
+        setText('healthNote', allConflicts.length ? `${allConflicts.length} existing conflict${allConflicts.length === 1 ? '' : 's'} found` : 'No conflicts detected');
+        const card = document.querySelector('.status-card');
+        if (card) card.classList.toggle('has-conflict', allConflicts.length > 0);
     }
 
     renderTeacherView() {
         const teacherList = document.getElementById('teacherList');
         const uniqueTeachers = [...new Set(this.schedules.map(s => s.teacherName))];
         if (uniqueTeachers.length === 0) {
-            teacherList.innerHTML = '<p class="empty-message">No schedules yet. Add one to get started!</p>';
+            teacherList.innerHTML = '<div class="welcome-state"><span class="welcome-kicker">WELCOME</span><h3>Your scheduling workspace is ready.</h3><p>Create your first class assignment using the scheduler, or open Manage Lists to set up your teachers, subjects, sections, buildings, and rooms.</p></div>';
             return;
         }
 
@@ -325,7 +610,7 @@ class ScheduleManager {
                                         <td>${schedule.day}</td>
                                         <td>${this.formatTime(schedule.startTime)} - ${this.formatTime(schedule.endTime)}</td>
                                         <td>${schedule.room}</td>
-                                        <td><button type="button" class="delete-btn" onclick="manager.deleteSchedule(${schedule.id})">Delete</button></td>
+                                        <td><button type="button" class="delete-btn" onclick="manager.deleteSchedule('${String(schedule.id).replace(/'/g, "\\'")}')">Delete</button></td>
                                     </tr>
                                 `;
                             }).join('')}
@@ -410,9 +695,56 @@ class ScheduleManager {
         }).join('');
     }
 
+    clearScheduleForm() {
+        const form = document.getElementById('scheduleForm');
+        if (!form) return;
+        form.reset();
+        this.renderRoomOptions();
+        const hint = document.getElementById('roomHint');
+        if (hint) hint.textContent = 'Pick a day and time to see available rooms.';
+        document.getElementById('notification')?.replaceChildren();
+    }
+
+    renderStudentsView() {
+        const list = document.getElementById('studentSectionList');
+        if (!list) return;
+        const grouped = {};
+        this.schedules.forEach(schedule => {
+            const section = (schedule.courseYear || '').trim();
+            if (!section) return;
+            if (!grouped[section]) grouped[section] = [];
+            grouped[section].push(schedule);
+        });
+        const sections = Object.keys(grouped).sort((a, b) => a.localeCompare(b));
+        if (!sections.length) {
+            list.innerHTML = '<p class="empty-message">No student schedules yet. Add a class to get started!</p>';
+            return;
+        }
+        const dayOrder = { Monday: 1, Tuesday: 2, Wednesday: 3, Thursday: 4, Friday: 5, Saturday: 6 };
+        sections.forEach(section => grouped[section].sort((a, b) => (dayOrder[a.day] || 0) - (dayOrder[b.day] || 0) || a.startTime.localeCompare(b.startTime)));
+        list.innerHTML = sections.map(section => {
+            const rows = grouped[section];
+            const safeSection = section.replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+            return `
+                <div class="teacher-card student-section-card">
+                    <div class="teacher-name">${section}</div>
+                    <table class="schedule-table full-table">
+                        <thead><tr><th>Subject</th><th>Teacher</th><th>Day</th><th>Time</th><th>Room</th></tr></thead>
+                        <tbody>${rows.map(schedule => `
+                            <tr><td>${schedule.subject}</td><td>${schedule.teacherName}</td><td>${schedule.day}</td>
+                            <td>${this.formatTime(schedule.startTime)} - ${this.formatTime(schedule.endTime)}</td><td>${schedule.room}</td></tr>
+                        `).join('')}</tbody>
+                    </table>
+                    <div class="student-section-actions"><button type="button" class="btn-view" onclick="manager.showSectionSchedule('${safeSection}')">View timetable</button></div>
+                </div>
+            `;
+        }).join('');
+    }
+
     renderManageView() {
         const teacherListManage = document.getElementById('teacherListManage');
         const roomListManage = document.getElementById('roomListManage');
+        const buildingListManage = document.getElementById('buildingListManage');
         const subjectListManage = document.getElementById('subjectListManage');
         const courseListManage = document.getElementById('courseListManage');
 
@@ -441,11 +773,12 @@ class ScheduleManager {
         } else {
             roomListManage.innerHTML = this.rooms.sort((a, b) => a.localeCompare(b)).map(roomName => {
                 const count = this.schedules.filter(s => s.room === roomName).length;
+                const building = (this.roomDetails[roomName] || {}).building;
                 return `
                     <div class="manage-item">
                         <div>
                             <div class="manage-item-title">${roomName}</div>
-                            <div class="manage-item-subtext">${count} schedule${count === 1 ? '' : 's'}</div>
+                            <div class="manage-item-subtext">${building ? `${building} · ` : ''}${count} schedule${count === 1 ? '' : 's'}</div>
                         </div>
                         <div class="manage-actions">
                             <button type="button" class="edit-btn" onclick="manager.handleEditRoom('${roomName.replace(/'/g, "\\'")}')">Edit</button>
@@ -456,6 +789,12 @@ class ScheduleManager {
             }).join('');
         }
 
+        if (buildingListManage) {
+            buildingListManage.innerHTML = this.buildings.length ? this.buildings.slice().sort((a,b)=>a.localeCompare(b)).map(building => `
+                <div class="manage-item"><div><div class="manage-item-title">${building}</div><div class="manage-item-subtext">${this.rooms.filter(r => (this.roomDetails[r] || {}).building === building).length} room(s)</div></div><div class="manage-actions"><button type="button" class="edit-btn" onclick="manager.handleEditBuilding('${building.replace(/'/g, "\\'")}')">Edit</button><button type="button" class="delete-btn" onclick="manager.handleDeleteBuilding('${building.replace(/'/g, "\\'")}')">Delete</button></div></div>
+            `).join('') : '<p class="empty-message">No buildings added yet.</p>';
+        }
+
         // Subjects
         if (subjectListManage) {
             if (this.subjects.length === 0) {
@@ -463,11 +802,13 @@ class ScheduleManager {
             } else {
                 subjectListManage.innerHTML = this.subjects.sort((a, b) => a.localeCompare(b)).map(subjectName => {
                     const count = this.schedules.filter(s => s.subject === subjectName).length;
+                    const details = this.subjectDetails[subjectName] || {};
+                    const meta = [details.courseCode, Number.isFinite(Number.parseInt(details.units, 10)) ? `${details.units} unit${Number.parseInt(details.units, 10) === 1 ? '' : 's'}` : '3 units'].filter(Boolean).join(' · ');
                     return `
                         <div class="manage-item">
                             <div>
                                 <div class="manage-item-title">${subjectName}</div>
-                                <div class="manage-item-subtext">${count} schedule${count === 1 ? '' : 's'}</div>
+                                <div class="manage-item-subtext">${meta ? `${meta} · ` : ''}${count} schedule${count === 1 ? '' : 's'}</div>
                             </div>
                             <div class="manage-actions">
                                 <button type="button" class="edit-btn" onclick="manager.handleEditSubject('${subjectName.replace(/'/g, "\\'")}')">Edit</button>
@@ -503,15 +844,16 @@ class ScheduleManager {
         }
     }
 
-    handleEditTeacher(oldName) {
-        const newNameRaw = prompt('Enter a new name for the teacher:', oldName);
-        const newName = newNameRaw ? newNameRaw.trim() : '';
+    async handleEditTeacher(oldName) {
+        const newNameRaw = await this.openActionModal({ title: 'Rename teacher', message: 'Enter a new name for this teacher.', value: oldName, confirmLabel: 'Save changes' });
+        const newName = newNameRaw ? newNameRaw.trim().toUpperCase() : '';
         if (!newName) return;
         if (this.teachers.some(t => t.toLowerCase() === newName.toLowerCase() && t !== oldName)) {
             return this.showNotification('A teacher with that name already exists.', 'error');
         }
         const index = this.teachers.findIndex(t => t === oldName);
         if (index === -1) return;
+        if (!(await this.updateRemoteListName('teachers', oldName, newName, 'teacher_name'))) return;
         this.teachers[index] = newName;
         this.schedules = this.schedules.map(s => s.teacherName === oldName ? { ...s, teacherName: newName } : s);
         this.saveTeachers();
@@ -520,15 +862,27 @@ class ScheduleManager {
         this.showNotification('Teacher name updated.', 'success');
     }
 
-    handleDeleteTeacher(name) {
+    async handleDeleteTeacher(name) {
         const related = this.schedules.filter(s => s.teacherName === name).length;
         if (related > 0) {
-            const cascade = confirm(`${name} has ${related} schedule(s). Click OK to delete the teacher and all their schedules, or Cancel to keep them.`);
+            const cascade = await this.openActionModal({ mode: 'confirm', title: 'Delete teacher and schedules?', message: `${name} has ${related} schedule(s). They will also be removed.`, confirmLabel: 'Delete all' });
             if (!cascade) return this.showNotification('Deletion cancelled. Remove schedules first to delete teacher.', 'error');
             // remove schedules and teacher
             this.schedules = this.schedules.filter(s => s.teacherName !== name);
         } else {
-            if (!confirm(`Delete teacher ${name}?`)) return;
+            if (!await this.openActionModal({ mode: 'confirm', title: 'Delete teacher?', message: `This will remove ${name}.`, confirmLabel: 'Delete' })) return;
+        }
+        if (this.remoteEnabled && this.supabase) {
+            const ownerScope = this.ownerViewingUserId || this.currentUser?.id;
+            let scheduleDelete = this.supabase.from('schedules').delete().eq('teacher_name', name);
+            let teacherDelete = this.supabase.from('teachers').delete().eq('name', name);
+            if (ownerScope) {
+                scheduleDelete = scheduleDelete.eq('owner_id', ownerScope);
+                teacherDelete = teacherDelete.eq('owner_id', ownerScope);
+            }
+            const { error: scheduleError } = await scheduleDelete;
+            const { error: teacherError } = await teacherDelete;
+            if (scheduleError || teacherError) return this.showNotification((scheduleError || teacherError).message || 'Unable to delete the teacher.', 'error');
         }
         this.teachers = this.teachers.filter(t => t !== name);
         this.saveTeachers();
@@ -537,15 +891,21 @@ class ScheduleManager {
         this.showNotification('Teacher deleted.', 'success');
     }
 
-    handleEditRoom(oldName) {
-        const newNameRaw = prompt('Enter a new name for the room:', oldName);
-        const newName = newNameRaw ? newNameRaw.trim() : '';
+    async handleEditRoom(oldName) {
+        const newNameRaw = await this.openActionModal({ title: 'Rename room', message: 'Enter a new room name.', value: oldName, confirmLabel: 'Save changes' });
+        const newName = newNameRaw ? newNameRaw.trim().toUpperCase() : '';
         if (!newName) return;
         if (this.rooms.some(r => r.toLowerCase() === newName.toLowerCase() && r !== oldName)) {
             return this.showNotification('A room with that name already exists.', 'error');
         }
         const index = this.rooms.findIndex(r => r === oldName);
         if (index === -1) return;
+        if (!(await this.updateRemoteListName('rooms', oldName, newName, 'room'))) return;
+        if (this.roomDetails[oldName]) {
+            this.roomDetails[newName] = this.roomDetails[oldName];
+            delete this.roomDetails[oldName];
+            this.saveListDetails('roomDetails', this.roomDetails);
+        }
         this.rooms[index] = newName;
         this.schedules = this.schedules.map(s => s.room === oldName ? { ...s, room: newName } : s);
         this.saveRooms();
@@ -554,15 +914,27 @@ class ScheduleManager {
         this.showNotification('Room name updated.', 'success');
     }
 
-    handleDeleteRoom(name) {
+    async handleDeleteRoom(name) {
         const related = this.schedules.filter(s => s.room === name).length;
         if (related > 0) {
-            const cascade = confirm(`${name} is used in ${related} schedule(s). Click OK to delete the room and remove those schedule entries, or Cancel to keep them.`);
+            const cascade = await this.openActionModal({ mode: 'confirm', title: 'Delete room and schedules?', message: `${name} is used in ${related} schedule(s). They will also be removed.`, confirmLabel: 'Delete all' });
             if (!cascade) return this.showNotification('Deletion cancelled. Remove schedules first to delete room.', 'error');
             // remove schedules that reference the room
             this.schedules = this.schedules.filter(s => s.room !== name);
         } else {
-            if (!confirm(`Delete room ${name}?`)) return;
+            if (!await this.openActionModal({ mode: 'confirm', title: 'Delete room?', message: `This will remove ${name}.`, confirmLabel: 'Delete' })) return;
+        }
+        if (this.remoteEnabled && this.supabase) {
+            const ownerScope = this.ownerViewingUserId || this.currentUser?.id;
+            let scheduleDelete = this.supabase.from('schedules').delete().eq('room', name);
+            let roomDelete = this.supabase.from('rooms').delete().eq('name', name);
+            if (ownerScope) {
+                scheduleDelete = scheduleDelete.eq('owner_id', ownerScope);
+                roomDelete = roomDelete.eq('owner_id', ownerScope);
+            }
+            const { error: scheduleError } = await scheduleDelete;
+            const { error: roomError } = await roomDelete;
+            if (scheduleError || roomError) return this.showNotification((scheduleError || roomError).message || 'Unable to delete the room.', 'error');
         }
         this.rooms = this.rooms.filter(r => r !== name);
         this.saveRooms();
@@ -572,15 +944,21 @@ class ScheduleManager {
     }
 
     // Subject / Course edit/delete handlers
-    handleEditSubject(oldName) {
-        const newNameRaw = prompt('Enter a new name for the subject:', oldName);
-        const newName = newNameRaw ? newNameRaw.trim() : '';
+    async handleEditSubject(oldName) {
+        const newNameRaw = await this.openActionModal({ title: 'Rename subject', message: 'Enter a new subject name.', value: oldName, confirmLabel: 'Save changes' });
+        const newName = newNameRaw ? newNameRaw.trim().toUpperCase() : '';
         if (!newName) return;
         if (this.subjects.some(s => s.toLowerCase() === newName.toLowerCase() && s !== oldName)) {
             return this.showNotification('A subject with that name already exists.', 'error');
         }
         const index = this.subjects.findIndex(s => s === oldName);
         if (index === -1) return;
+        if (!(await this.updateRemoteListName('subjects', oldName, newName, 'subject'))) return;
+        if (this.subjectDetails[oldName]) {
+            this.subjectDetails[newName] = this.subjectDetails[oldName];
+            delete this.subjectDetails[oldName];
+            this.saveListDetails('subjectDetails', this.subjectDetails);
+        }
         this.subjects[index] = newName;
         this.schedules = this.schedules.map(s => s.subject === oldName ? { ...s, subject: newName } : s);
         this.saveSubjects();
@@ -590,14 +968,26 @@ class ScheduleManager {
         this.showNotification('Subject updated.', 'success');
     }
 
-    handleDeleteSubject(name) {
+    async handleDeleteSubject(name) {
         const related = this.schedules.filter(s => s.subject === name).length;
         if (related > 0) {
-            const cascade = confirm(`${name} is used in ${related} schedule(s). Click OK to delete the subject and remove those schedule entries, or Cancel to keep them.`);
+            const cascade = await this.openActionModal({ mode: 'confirm', title: 'Delete subject and schedules?', message: `${name} is used in ${related} schedule(s). They will also be removed.`, confirmLabel: 'Delete all' });
             if (!cascade) return this.showNotification('Deletion cancelled. Remove schedules first to delete subject.', 'error');
             this.schedules = this.schedules.filter(s => s.subject !== name);
         } else {
-            if (!confirm(`Delete subject ${name}?`)) return;
+            if (!await this.openActionModal({ mode: 'confirm', title: 'Delete subject?', message: `This will remove ${name}.`, confirmLabel: 'Delete' })) return;
+        }
+        if (this.remoteEnabled && this.supabase) {
+            const ownerScope = this.ownerViewingUserId || this.currentUser?.id;
+            let scheduleDelete = this.supabase.from('schedules').delete().eq('subject', name);
+            let subjectDelete = this.supabase.from('subjects').delete().eq('name', name);
+            if (ownerScope) {
+                scheduleDelete = scheduleDelete.eq('owner_id', ownerScope);
+                subjectDelete = subjectDelete.eq('owner_id', ownerScope);
+            }
+            const { error: scheduleError } = await scheduleDelete;
+            const { error: subjectError } = await subjectDelete;
+            if (scheduleError || subjectError) return this.showNotification((scheduleError || subjectError).message || 'Unable to delete the subject.', 'error');
         }
         this.subjects = this.subjects.filter(s => s !== name);
         this.saveSubjects();
@@ -607,15 +997,16 @@ class ScheduleManager {
         this.showNotification('Subject deleted.', 'success');
     }
 
-    handleEditCourse(oldName) {
-        const newNameRaw = prompt('Enter a new name for the course & year:', oldName);
-        const newName = newNameRaw ? newNameRaw.trim() : '';
+    async handleEditCourse(oldName) {
+        const newNameRaw = await this.openActionModal({ title: 'Rename section', message: 'Enter a new course and year name.', value: oldName, confirmLabel: 'Save changes' });
+        const newName = newNameRaw ? newNameRaw.trim().toUpperCase() : '';
         if (!newName) return;
         if (this.courses.some(c => c.toLowerCase() === newName.toLowerCase() && c !== oldName)) {
             return this.showNotification('A course with that name already exists.', 'error');
         }
         const index = this.courses.findIndex(c => c === oldName);
         if (index === -1) return;
+        if (!(await this.updateRemoteListName('courses', oldName, newName, 'course_year'))) return;
         this.courses[index] = newName;
         this.schedules = this.schedules.map(s => s.courseYear === oldName ? { ...s, courseYear: newName } : s);
         this.saveCourses();
@@ -624,14 +1015,46 @@ class ScheduleManager {
         this.showNotification('Course updated.', 'success');
     }
 
-    handleDeleteCourse(name) {
+    async updateRemoteListName(table, oldName, newName, scheduleColumn) {
+        if (!this.remoteEnabled || !this.currentUser) return true;
+        const ownerScope = this.ownerViewingUserId || this.currentUser.id;
+        let listUpdate = this.supabase.from(table).update({ name: newName }).eq('name', oldName);
+        if (this.ownerViewingUserId) listUpdate = listUpdate.eq('owner_id', ownerScope);
+        const { error: listError } = await listUpdate;
+        if (listError) {
+            this.showNotification('Could not save the renamed item.', 'error');
+            return false;
+        }
+        let scheduleUpdate = this.supabase.from('schedules').update({ [scheduleColumn]: newName }).eq(scheduleColumn, oldName);
+        if (this.ownerViewingUserId) scheduleUpdate = scheduleUpdate.eq('owner_id', ownerScope);
+        const { error: scheduleError } = await scheduleUpdate;
+        if (scheduleError) {
+            this.showNotification('The list changed, but related schedules could not be updated.', 'error');
+            return false;
+        }
+        return true;
+    }
+
+    async handleDeleteCourse(name) {
         const related = this.schedules.filter(s => s.courseYear === name).length;
         if (related > 0) {
-            const cascade = confirm(`${name} is used in ${related} schedule(s). Click OK to delete the course and remove those schedule entries, or Cancel to keep them.`);
+            const cascade = await this.openActionModal({ mode: 'confirm', title: 'Delete section and schedules?', message: `${name} is used in ${related} schedule(s). They will also be removed.`, confirmLabel: 'Delete all' });
             if (!cascade) return this.showNotification('Deletion cancelled. Remove schedules first to delete course.', 'error');
             this.schedules = this.schedules.filter(s => s.courseYear !== name);
         } else {
-            if (!confirm(`Delete course ${name}?`)) return;
+            if (!await this.openActionModal({ mode: 'confirm', title: 'Delete section?', message: `This will remove ${name}.`, confirmLabel: 'Delete' })) return;
+        }
+        if (this.remoteEnabled && this.supabase) {
+            const ownerScope = this.ownerViewingUserId || this.currentUser?.id;
+            let scheduleDelete = this.supabase.from('schedules').delete().eq('course_year', name);
+            let courseDelete = this.supabase.from('courses').delete().eq('name', name);
+            if (ownerScope) {
+                scheduleDelete = scheduleDelete.eq('owner_id', ownerScope);
+                courseDelete = courseDelete.eq('owner_id', ownerScope);
+            }
+            const { error: scheduleError } = await scheduleDelete;
+            const { error: courseError } = await courseDelete;
+            if (scheduleError || courseError) return this.showNotification((scheduleError || courseError).message || 'Unable to delete the section.', 'error');
         }
         this.courses = this.courses.filter(c => c !== name);
         this.saveCourses();
@@ -645,11 +1068,179 @@ class ScheduleManager {
         e.target.classList.add('active');
         const viewType = e.target.dataset.view;
         document.querySelectorAll('.view-content').forEach(view => view.classList.remove('active'));
-        document.getElementById(viewType === 'teacher' ? 'teacherView' : viewType === 'all' ? 'allView' : 'manageView').classList.add('active');
+        const viewId = viewType === 'teacher' ? 'teacherView'
+            : viewType === 'all' ? 'allView'
+            : viewType === 'students' ? 'studentsView'
+            : viewType === 'owner' ? 'ownerView'
+            : 'manageView';
+        if (viewType === 'owner' && !this.isOwner) {
+            const fallback = document.querySelector('.toggle-btn[data-view="teacher"]');
+            if (fallback) this.switchView({ target: fallback });
+            return;
+        }
+        document.getElementById(viewId).classList.add('active');
         const mainContent = document.querySelector('.main-content');
         if (mainContent) {
-            mainContent.classList.toggle('all-view-active', viewType === 'all');
+            mainContent.classList.toggle('all-view-active', viewType === 'all' || viewType === 'students');
+            mainContent.classList.toggle('manage-view-active', viewType === 'manage');
         }
+    }
+
+    resetToMemberStartView() {
+        this.ownerViewingUserId = null;
+        document.getElementById('appShell')?.classList.remove('owner-mode', 'owner-user-mode');
+        document.getElementById('ownerBackToUsers')?.classList.add('hidden');
+        document.querySelectorAll('.view-content').forEach(panel => panel.classList.remove('active'));
+        document.getElementById('teacherView')?.classList.add('active');
+        document.querySelectorAll('.toggle-btn').forEach(btn => btn.classList.toggle('active', btn.dataset.view === 'teacher'));
+        const mainContent = document.querySelector('.main-content');
+        mainContent?.classList.remove('all-view-active', 'manage-view-active');
+    }
+
+    renderOwnerView() {
+        const view = document.getElementById('ownerView');
+        if (!view) return;
+        const backButton = document.getElementById('ownerBackToUsers');
+        if (!this.ownerViewingUserId) backButton?.classList.add('hidden');
+        if (!this.isOwner) {
+            view.classList.remove('active');
+            return;
+        }
+        if (!this.ownerViewingUserId) {
+            document.getElementById('appShell')?.classList.remove('owner-user-mode');
+            document.getElementById('appShell')?.classList.add('owner-mode');
+        }
+        const list = document.getElementById('ownerUsersList');
+        const count = document.getElementById('ownerUserCount');
+        if (!list) return;
+        const profiles = Array.isArray(this.ownerProfiles) ? this.ownerProfiles : [];
+        const userProfiles = profiles.filter(profile => !['owner', 'school_admin'].includes(String(profile.role || '').toLowerCase()));
+        if (count) count.textContent = `${userProfiles.length} account${userProfiles.length === 1 ? '' : 's'}`;
+        if (!userProfiles.length) { list.innerHTML = '<p class="empty-message">No regular user accounts found.</p>'; return; }
+        list.classList.remove('hidden');
+        const selectedPanel = document.getElementById('ownerSelectedPanel');
+        if (selectedPanel) selectedPanel.classList.add('hidden');
+        list.innerHTML = userProfiles.map(profile => {
+            const rows = this.schedules.filter(s => s.ownerId === profile.id).length;
+            const name = this.escapeHtml(profile.full_name || profile.email || 'Unnamed user');
+            const email = this.escapeHtml(profile.email || '');
+            return `<button type="button" class="owner-user-card" onclick="manager.selectOwnerUser('${String(profile.id).replace(/'/g, "\\'")}')"><span class="owner-avatar">${this.escapeHtml((profile.full_name || profile.email || '?').slice(0, 1).toUpperCase())}</span><span class="owner-user-info"><strong>${name}</strong><small>${email}</small></span><span class="owner-user-classes">${rows} scheduled class${rows === 1 ? '' : 'es'} <span>›</span></span></button>`;
+        }).join('');
+        return;
+        if (this.ownerSelectedUserId) {
+            const profile = profiles.find(p => p.id === this.ownerSelectedUserId);
+            if (!profile) { this.ownerSelectedUserId = null; return this.renderOwnerView(); }
+            list.classList.add('hidden');
+            selected.classList.remove('hidden');
+            document.getElementById('ownerSelectedName').textContent = profile.full_name || profile.email || 'User schedule';
+            document.getElementById('ownerSelectedEmail').textContent = `${profile.email || ''}${profile.department && profile.department !== 'Unassigned' ? ` · ${profile.department}` : ''}`;
+            const rows = this.schedules.filter(s => s.ownerId === profile.id);
+            const target = document.getElementById('ownerSelectedSchedules');
+            target.innerHTML = rows.length ? `<div class="owner-schedule-card"><div class="owner-schedule-meta">${rows.length} scheduled class${rows.length === 1 ? '' : 'es'}</div><table class="schedule-table full-table"><thead><tr><th>Subject</th><th>Teacher</th><th>Section</th><th>Day</th><th>Time</th><th>Room</th><th>Action</th></tr></thead><tbody>${rows.map(s => `<tr><td>${this.escapeHtml(s.subject)}</td><td>${this.escapeHtml(s.teacherName)}</td><td>${this.escapeHtml(s.courseYear)}</td><td>${this.escapeHtml(s.day)}</td><td>${this.formatTime(s.startTime)} - ${this.formatTime(s.endTime)}</td><td>${this.escapeHtml(s.room)}</td><td><button type="button" class="btn-action owner-edit-btn" onclick="manager.openOwnerEdit('${String(s.id).replace(/'/g, "\\'")}')">Edit</button> <button type="button" class="delete-btn" onclick="manager.deleteSchedule('${String(s.id).replace(/'/g, "\\'")}')">Delete</button></td></tr>`).join('')}</tbody></table></div>` : '<p class="empty-message">This user has not created a schedule yet.</p>';
+            return;
+        }
+        list.classList.remove('hidden');
+        selected.classList.add('hidden');
+        if (!profiles.length) { list.innerHTML = '<p class="empty-message">No registered users found.</p>'; return; }
+        list.innerHTML = profiles.map(profile => {
+            const classes = this.schedules.filter(s => s.ownerId === profile.id).length;
+            const role = profile.role || 'member';
+            return `<button type="button" class="owner-user-card" onclick="manager.selectOwnerUser('${String(profile.id).replace(/'/g, "\\'")}')"><span class="owner-avatar">${this.escapeHtml((profile.full_name || profile.email || '?').slice(0, 1).toUpperCase())}</span><span class="owner-user-info"><strong>${this.escapeHtml(profile.full_name || 'Unnamed user')}</strong><small>${this.escapeHtml(profile.email || '')}</small></span><span class="owner-user-role">${this.escapeHtml(role)}</span><span class="owner-user-classes">${classes} class${classes === 1 ? '' : 'es'} <span>›</span></span></button>`;
+        }).join('');
+    }
+
+    async loadOwnerCatalog(ownerId) {
+        if (this.remoteEnabled && this.supabase && ownerId) {
+            const fresh = { teachers: [], subjects: [], rooms: [], courses: [] };
+            const columns = { teachers: 'id,owner_id,name', subjects: 'id,owner_id,name,course_code,units', rooms: 'id,owner_id,name,building', courses: 'id,owner_id,name' };
+            for (const table of Object.keys(fresh)) {
+                const { data, error } = await this.supabase.from(table).select(columns[table]).eq('owner_id', ownerId).order('name', { ascending: true });
+                if (!error && Array.isArray(data)) fresh[table] = data;
+            }
+            this.ownerCatalog[ownerId] = fresh;
+        }
+        const catalog = this.ownerCatalog?.[ownerId];
+        if (!catalog) return;
+        this.teachers = catalog.teachers.map(row => String(row.name || '').toUpperCase()).filter(Boolean);
+        this.subjects = catalog.subjects.map(row => String(row.name || '').toUpperCase()).filter(Boolean);
+        this.courses = catalog.courses.map(row => String(row.name || '').toUpperCase()).filter(Boolean);
+        this.rooms = catalog.rooms.map(row => String(row.name || '').toUpperCase()).filter(Boolean);
+        this.subjectDetails = {};
+        catalog.subjects.forEach(row => { const name = String(row.name || '').toUpperCase(); this.subjectDetails[name] = { courseCode: String(row.course_code || '').toUpperCase(), units: row.units ?? 3 }; });
+        this.roomDetails = {};
+        catalog.rooms.forEach(row => { this.roomDetails[String(row.name || '').toUpperCase()] = { building: String(row.building || '').toUpperCase() }; });
+        this.buildings = Array.from(new Set(catalog.rooms.map(row => String(row.building || '').toUpperCase()).filter(Boolean)));
+        this.ensureUniqueSubjectColors();
+        this.renderTeacherOptions(); this.renderSubjectOptions(); this.renderCourseOptions(); this.renderBuildingOptions(); this.renderRoomOptions(); this.renderRoomBuildingOptions(); this.renderSectionScheduleOptions();
+    }
+
+    async selectOwnerUser(id) {
+        if (!this.isOwner) return;
+        this.ownerSelectedUserId = id;
+        this.ownerViewingUserId = id;
+        sessionStorage.setItem('scheduleStudioOwnerUser', id);
+        this.ownerAllSchedules = [...this.schedules];
+        this.schedules = this.ownerAllSchedules.filter(schedule => schedule.ownerId === id);
+        await this.loadOwnerCatalog(id);
+        document.getElementById('appShell')?.classList.remove('owner-mode');
+        document.getElementById('appShell')?.classList.add('owner-user-mode');
+        document.getElementById('ownerView')?.classList.remove('active');
+        document.getElementById('ownerBackToUsers')?.classList.remove('hidden');
+        document.querySelectorAll('.view-content').forEach(panel => panel.classList.remove('active'));
+        document.getElementById('teacherView')?.classList.add('active');
+        document.querySelectorAll('.toggle-btn').forEach(btn => btn.classList.remove('active'));
+        document.querySelector('.toggle-btn[data-view="teacher"]')?.classList.add('active');
+        this.render();
+        this.renderTeacherOptions(); this.renderSubjectOptions(); this.renderCourseOptions(); this.renderBuildingOptions(); this.renderRoomOptions();
+    }
+
+    exitOwnerUserView() {
+        if (!this.isOwner) return;
+        this.schedules = this.ownerAllSchedules || [];
+        this.ownerViewingUserId = null;
+        this.ownerSelectedUserId = null;
+        this.loadOwnerCatalog(this.currentUser?.id);
+        sessionStorage.removeItem('scheduleStudioOwnerUser');
+        document.getElementById('appShell')?.classList.remove('owner-user-mode');
+        document.getElementById('appShell')?.classList.add('owner-mode');
+        document.getElementById('ownerBackToUsers')?.classList.add('hidden');
+        document.querySelectorAll('.view-content').forEach(panel => panel.classList.remove('active'));
+        document.getElementById('ownerView')?.classList.add('active');
+        this.render();
+    }
+
+    openOwnerEdit(id) {
+        if (!this.isOwner) return;
+        const schedule = this.schedules.find(s => String(s.id) === String(id));
+        if (!schedule) return;
+        const set = (field, value) => { const el = document.getElementById(field); if (el) el.value = value || ''; };
+        set('ownerEditId', schedule.id); set('ownerEditTeacher', schedule.teacherName); set('ownerEditSubject', schedule.subject); set('ownerEditSection', schedule.courseYear); set('ownerEditDay', schedule.day); set('ownerEditStart', schedule.startTime); set('ownerEditEnd', schedule.endTime); set('ownerEditBuilding', schedule.building); set('ownerEditRoom', schedule.room);
+        document.getElementById('ownerEditModal')?.classList.remove('hidden');
+    }
+
+    closeOwnerEdit() { document.getElementById('ownerEditModal')?.classList.add('hidden'); }
+
+    async saveOwnerEdit(event) {
+        event.preventDefault();
+        const id = document.getElementById('ownerEditId').value;
+        const existing = this.schedules.find(s => String(s.id) === String(id));
+        if (!existing || !this.isOwner) return;
+        const updated = { ...existing, teacherName: document.getElementById('ownerEditTeacher').value.trim(), subject: document.getElementById('ownerEditSubject').value.trim(), courseYear: document.getElementById('ownerEditSection').value.trim(), day: document.getElementById('ownerEditDay').value, startTime: document.getElementById('ownerEditStart').value, endTime: document.getElementById('ownerEditEnd').value, building: document.getElementById('ownerEditBuilding').value.trim(), room: document.getElementById('ownerEditRoom').value.trim() };
+        const validation = this.validateSchedule(updated);
+        if (validation) return this.showNotification(validation, 'error');
+        const conflict = this.checkConflicts(updated, existing.id);
+        if (conflict.hasConflict) return this.showNotification('The edited class conflicts with another schedule.', 'error');
+        if (this.remoteEnabled) {
+            let updateQuery = this.supabase.from('schedules').update({ teacher_name: updated.teacherName, subject: updated.subject, course_year: updated.courseYear, day: updated.day, start_time: updated.startTime, end_time: updated.endTime, building: updated.building || null, room: updated.room }).eq('id', existing.id);
+            if (existing.ownerId) updateQuery = updateQuery.eq('owner_id', existing.ownerId);
+            const { error } = await updateQuery;
+            if (error) return this.showNotification(error.message || 'Unable to update schedule.', 'error');
+        }
+        Object.assign(existing, updated); this.saveSchedules(); this.closeOwnerEdit(); this.render(); this.showNotification('Schedule updated.', 'success');
+    }
+
+    escapeHtml(value) {
+        return String(value ?? '').replace(/[&<>'"]/g, ch => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#39;', '"': '&quot;' }[ch]));
     }
 
     showTeacherSchedule(teacherName) {
@@ -658,6 +1249,9 @@ class ScheduleManager {
         // mark modal with current teacher for use by print/export actions
         const modal = document.getElementById('teacherScheduleModal');
         if (modal) modal.dataset.teacher = teacherName;
+        if (modal) modal.dataset.section = '';
+        document.getElementById('viewLoadBtn')?.classList.remove('hidden');
+        document.getElementById('viewSectionOfficialModalBtn')?.classList.add('hidden');
 
         // Determine days to display: default Mon-Fri, include Saturday only if teacher has classes there
         const allDays = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
@@ -673,11 +1267,83 @@ class ScheduleManager {
         if (latestEndMin > defaultEnd) displayEnd = Math.min(latestEndMin, maxAllowedEnd);
 
         const slots = this.generateTimeSlots().filter(slot => this.timeToMinutes(slot.start) < displayEnd);
-        const grid = this.buildScheduleGrid(teacherSchedules, daysToShow, slots);
+        const grid = this.buildScheduleGrid(teacherSchedules, daysToShow, slots, 'teacher');
 
         document.getElementById('modalTeacherName').textContent = `${teacherName} — Plotted Schedule`;
         document.getElementById('scheduleGridContainer').innerHTML = grid;
         document.getElementById('teacherScheduleModal').classList.remove('hidden');
+    }
+
+    showSectionSchedule(sectionName) {
+        const sectionSchedules = this.schedules.filter(s => (s.courseYear || '').toLowerCase() === sectionName.toLowerCase());
+        if (!sectionSchedules.length) return this.showNotification('No schedules found for this section.', 'error');
+        const modal = document.getElementById('teacherScheduleModal');
+        if (modal) { modal.dataset.teacher = ''; modal.dataset.section = sectionName; }
+        document.getElementById('viewLoadBtn')?.classList.add('hidden');
+        document.getElementById('viewSectionOfficialModalBtn')?.classList.remove('hidden');
+        const allDays = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+        const daysToShow = allDays.filter(d => d !== 'Saturday' || sectionSchedules.some(s => s.day === d));
+        const latestEndMin = sectionSchedules.reduce((max, s) => Math.max(max, this.timeToMinutes(s.endTime)), 0);
+        const displayEnd = Math.min(Math.max(17 * 60, latestEndMin), 21 * 60);
+        const slots = this.generateTimeSlots().filter(slot => this.timeToMinutes(slot.start) < displayEnd);
+        const grid = this.buildScheduleGrid(sectionSchedules, daysToShow, slots, 'section');
+        document.getElementById('modalTeacherName').textContent = `${sectionName} — Student Timetable`;
+        document.getElementById('scheduleGridContainer').innerHTML = grid;
+        document.getElementById('teacherScheduleModal').classList.remove('hidden');
+    }
+
+    generateSectionOfficialElement(sectionName) {
+        const schedules = this.schedules.filter(s => (s.courseYear || '').toLowerCase() === sectionName.toLowerCase());
+        const latestEndMin = schedules.reduce((max, s) => Math.max(max, this.timeToMinutes(s.endTime)), 0);
+        const displayEnd = Math.min(Math.max(18 * 60, latestEndMin), 21 * 60);
+        const days = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+        const slots = this.generateTimeSlots().filter(slot => this.timeToMinutes(slot.start) < displayEnd);
+        const grid = this.buildScheduleGrid(schedules, days, slots, 'section');
+        const container = document.createElement('div');
+        container.className = 'section-official-pdf';
+        container.style.fontFamily = '"Times New Roman", Times, serif';
+        container.style.padding = '16px';
+        container.style.color = '#111';
+        container.style.background = '#fff';
+        container.style.width = '1160px';
+        container.innerHTML = `
+            <div style="display:flex; align-items:center; justify-content:center; gap:10px; width:650px; max-width:100%; margin:0 auto 10px;">
+                <img src="assets/CSAP-LOGO.png" style="width:70px; height:70px; object-fit:contain;">
+                <div style="flex:1; text-align:center; font-size:12px; line-height:1.35;">
+                    <div>COLEGIO DE SAN ANTONIO DE PADUA</div>
+                    <div>SUPERVISED BY THE LASALLIAN SCHOOL SUPERVISION OFFICE</div>
+                    <div>RAMON M. DURANO FOUNDATION COMPOUND</div>
+                    <div>GUINSAY, DANAO CITY</div>
+                </div>
+                <img src="assets/logo.png" style="width:70px; height:70px; object-fit:contain;">
+            </div>
+            <div style="text-align:center; font-size:16px; font-weight:700; margin:4px 0 2px;">COLLEGE OF ENGINEERING</div>
+            <div style="text-align:center; font-size:14px; margin-bottom:8px;">FIRST SEMESTER 2026-2027</div>
+            <div class="section-official-title-row">
+                <div class="section-official-title">${sectionName}</div>
+                <div class="section-official-adviser"><strong>Class Adviser:</strong><br>&nbsp;</div>
+            </div>
+            <div class="section-official-grid">${grid}</div>
+            <div style="display:flex; justify-content:space-between; margin-top:18px; font-size:11px;">
+                <div><div>Prepared by:</div><strong>Engr. Shem Jay M. Tariao, MEng.Ed</strong><br>Program Chair, BSEE</div>
+                <div><div>Noted By:</div><strong>Engr. Emmanuel M. Nadela, MEng.Ed</strong><br>DEAN, College of Engineering</div>
+                <div><div>Approved By:</div><strong>Dr. Alberto A. Jumao-As Jr.</strong><br>VP, Academic Affairs &amp; Research</div>
+            </div>
+        `;
+        return container;
+    }
+
+    viewSectionOfficialPdf(sectionName) {
+        const schedules = this.schedules.filter(s => (s.courseYear || '').toLowerCase() === sectionName.toLowerCase());
+        if (!schedules.length) return this.showNotification('No schedules found for this section.', 'error');
+        const element = this.generateSectionOfficialElement(sectionName);
+        document.body.appendChild(element);
+        this.createPdfFromElement(element, { orientation: 'landscape', format: 'a4' }).then(pdf => {
+            const url = URL.createObjectURL(pdf.output('blob'));
+            const win = window.open(url, '_blank');
+            if (!win) this.showNotification('Popup blocked. Please allow popups.', 'error');
+        }).catch(error => this.showNotification('Failed to generate official PDF: ' + error.message, 'error'))
+          .finally(() => { if (element.parentNode) element.parentNode.removeChild(element); });
     }
 
     hideTeacherSchedule() {
@@ -706,7 +1372,7 @@ class ScheduleManager {
         return slots;
     }
 
-    buildScheduleGrid(schedules, days, slots) {
+    buildScheduleGrid(schedules, days, slots, audience = 'teacher') {
         // Build a grid that merges consecutive slots into a single cell using rowspan
         // Prepare a map for each day with slot placeholders
         const slotCount = slots.length;
@@ -735,10 +1401,12 @@ class ScheduleManager {
             // compute colors now and bake into the cell to avoid later lookup issues
             const bg = this.getColorForSubject(schedule.subject);
             const fg = this.getTextColorForBg(bg);
+            const building = schedule.building || ((this.roomDetails[schedule.room] || {}).building) || '';
             const content = `
                 <div class="cell-content">
                     <div class="subject">${schedule.subject}</div>
-                    <div class="section">${schedule.courseYear}</div>
+                    <div class="section">${audience === 'section' ? schedule.teacherName : schedule.courseYear}</div>
+                    ${building ? `<div class="building">${building}</div>` : ''}
                     <div class="room">${schedule.room}</div>
                 </div>
             `;
@@ -774,7 +1442,7 @@ class ScheduleManager {
     }
 
     // Create a jsPDF instance from the schedule HTML element
-    createPdfFromElement(element) {
+    createPdfFromElement(element, options = {}) {
         return new Promise((resolve, reject) => {
             if (!element) return reject(new Error('No element to render'));
             if (typeof html2canvas === 'undefined') return reject(new Error('html2canvas is not loaded'));
@@ -798,7 +1466,12 @@ class ScheduleManager {
             html2canvas(clone, { scale: 2, scrollY: -window.scrollY }).then(canvas => {
                 try {
                     const imgData = canvas.toDataURL('image/png');
-                    const pdf = new jsPDFClass({ orientation: 'landscape', unit: 'pt', format: 'a4' });
+                    const pdf = new jsPDFClass({
+                        orientation: options.orientation || 'portrait',
+                        unit: 'pt',
+                        // All generated PDFs use A4 paper; orientation is selected per document.
+                        format: options.format || 'a4'
+                    });
                     const pageWidth = pdf.internal.pageSize.getWidth();
                     const pageHeight = pdf.internal.pageSize.getHeight();
 
@@ -878,44 +1551,50 @@ class ScheduleManager {
         container.style.background = '#fff';
         container.style.width = '1000px';
 
-        // Header: logos and institution text on the same centered row, with title block below
+        // Header styled to match the official instructor-load form.
         const header = `
-            <div style="display:flex; align-items:center; justify-content:space-between; gap:12px; margin:0 auto 6px; font-size:11.6px; line-height:1.12; width:840px; max-width:100%;">
-                <div style="flex:0 0 78px; display:flex; justify-content:center; align-items:center;">
-                    <img src="assets/CSAP-LOGO.png" style="width:72px; max-width:100%; height:auto; object-fit:contain;">
+            <div style="display:flex; align-items:center; justify-content:center; gap:8px; margin:0 auto 22px; width:500px; max-width:100%;">
+                <div style="flex:0 0 72px; display:flex; justify-content:center; align-items:center;">
+                    <img src="assets/CSAP-LOGO.png" style="width:68px; height:68px; object-fit:contain;">
                 </div>
-                <div style="flex:1 1 0; min-width:0; max-width:520px; text-align:center; padding:0 6px;">
-                    <div style="font-weight:600;">Colegio de San Antonio de Padua, Inc.</div>
+                <div style="flex:0 1 340px; min-width:0; text-align:center; padding:0 2px; color:#666; font-size:14px; line-height:1.18;">
+                    <div>Colegio de San Antonio de Padua, Inc.</div>
                     <div>Supervised by Lasallian School Supervision Office</div>
                     <div>Ramon M. Durano, Foundation Compound</div>
                     <div>Guinsay, Danao City</div>
                 </div>
-                <div style="flex:0 0 78px; display:flex; justify-content:center; align-items:center;">
-                    <img src="assets/logo.png" style="width:72px; max-width:100%; height:auto; object-fit:contain;">
+                <div style="flex:0 0 72px; display:flex; justify-content:center; align-items:center;">
+                    <img src="assets/logo.png" style="width:68px; height:68px; object-fit:contain;">
                 </div>
             </div>
 
-            <div style="text-align:center; margin-top:6px; margin-bottom:10px;">
+            <div style="text-align:center; margin-bottom:18px; color:#000; line-height:1.18;">
                 <div style="font-size:14px; font-weight:700;">COLLEGE OF ENGINEERING</div>
-                <div style="font-size:13px; font-weight:700; margin-top:6px;">INSTRUCTOR'S LOAD</div>
-                <div style="font-size:12px; margin-top:4px;">School Year: 2026 - 2027 (1st Semester)</div>
+                <div style="font-size:14px; font-weight:700;">INSTRUCTOR'S LOAD</div>
+                <div style="font-size:12px; font-weight:700; margin-top:3px;">School Year: 2026 – 2027 (1<sup>st</sup> Semester)</div>
             </div>
         `;
+
+        const getUnits = (schedule) => {
+            const parsed = Number.parseInt(schedule.units, 10);
+            return Number.isFinite(parsed) ? parsed : 3;
+        };
+        // Lecture: 1 hour per unit. Laboratory: 3 hours per unit.
+        const getTeachingHours = (schedule) => getUnits(schedule) * (/\blab(?:oratory)?\b/i.test(schedule.subject || '') ? 3 : 1);
 
         // Build table rows
         const rows = schedules.map(s => {
             // compute units (use stored units if present, otherwise default 3) and hours
-            const units = (s.units !== undefined && s.units !== null) ? (parseInt(s.units, 10) || 0) : 3;
-            const mins = this.timeToMinutes(s.endTime) - this.timeToMinutes(s.startTime);
-            const hoursDecimal = (mins / 60).toFixed(2);
+            const units = getUnits(s);
+            const teachingHours = getTeachingHours(s);
             const timeStr = `${this.formatTime(s.startTime)} - ${this.formatTime(s.endTime)}`;
             return `<tr>
                 <td style="border:1px solid #000; padding:6px;">${s.courseCode || ''}</td>
                 <td style="border:1px solid #000; padding:6px;">${s.subject}</td>
                 <td style="border:1px solid #000; padding:6px;">${s.courseYear}</td>
                 <td style="border:1px solid #000; padding:6px; text-align:center;">${units}</td>
-                <td style="border:1px solid #000; padding:6px; text-align:center;">${hoursDecimal}</td>
-                <td style="border:1px solid #000; padding:6px; text-align:center;">${s.overload || ''}</td>
+                <td style="border:1px solid #000; padding:6px; text-align:center;">${teachingHours}</td>
+                <td style="border:1px solid #000; padding:6px; text-align:center;"></td>
                 <td style="border:1px solid #000; padding:6px;">${timeStr}</td>
                 <td style="border:1px solid #000; padding:6px; text-align:center;">${s.day}</td>
                 <td style="border:1px solid #000; padding:6px;">${s.building || ''}</td>
@@ -924,8 +1603,10 @@ class ScheduleManager {
         }).join('');
 
         // Totals (sum units/hours)
-        const totalUnits = schedules.reduce((sum, s) => sum + ((s.units !== undefined && s.units !== null) ? (parseInt(s.units,10) || 0) : 3), 0);
-        const totalHours = schedules.reduce((sum, s) => sum + ((this.timeToMinutes(s.endTime) - this.timeToMinutes(s.startTime)) / 60), 0).toFixed(2);
+        const totalUnits = schedules.reduce((sum, s) => sum + getUnits(s), 0);
+        const totalHours = schedules.reduce((sum, s) => sum + getTeachingHours(s), 0);
+        const regularLoad = Math.min(totalUnits, 24);
+        const overloadUnits = Math.max(totalUnits - 24, 0);
 
         const table = `
             <div style="margin-top:10px; font-size:12px;">
@@ -935,8 +1616,8 @@ class ScheduleManager {
                         <div style="margin-top:6px;"><strong>Effective Date</strong> &nbsp;&nbsp;&nbsp;&nbsp;: </div>
                     </div>
                     <div style="width:320px; text-align:right;">
-                        <div><strong>Regular Teaching Load</strong> &nbsp;&nbsp;: ${totalUnits}</div>
-                        <div style="margin-top:6px;"><strong>Overload</strong> &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;: </div>
+                        <div><strong>Regular Teaching Load</strong> &nbsp;&nbsp;: ${regularLoad}</div>
+                        <div style="margin-top:6px;"><strong>Overload</strong> &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;: ${overloadUnits}</div>
                     </div>
                 </div>
 
@@ -970,31 +1651,31 @@ class ScheduleManager {
                 <div style="display:flex; justify-content:space-between; margin-top:28px; font-size:11px;">
                     <div style="width:28%; text-align:left;">
                         <div style="margin-bottom:24px;">Conformed by:</div>
-                        <div style="margin-bottom:14px; display:inline-block; border-bottom:1px solid #000; width:64%; padding-bottom:3px;">&nbsp;</div>
-                        <div style="margin-top:10px; font-style:italic;">Instructor</div>
+                        <div style="margin-bottom:3px; display:inline-block; border-bottom:1px solid #000; width:64%; padding-bottom:3px;">&nbsp;</div>
+                        <div style="margin-top:3px; font-style:italic;">Instructor</div>
                     </div>
                     <div style="width:28%; text-align:center;">
                         <div style="margin-bottom:24px;">Prepared by:</div>
-                        <div style="margin-bottom:14px; display:inline-block; border-bottom:1px solid #000; width:68%; padding-bottom:3px;">ENGR. SHEM JAY M. TARIAO</div>
-                        <div style="margin-top:10px; font-size:11px;">&nbsp;</div>
+                        <div style="margin-bottom:3px; display:inline-block; border-bottom:1px solid #000; width:68%; padding-bottom:3px;">ENGR. SHEM JAY M. TARIAO</div>
+                        <div style="margin-top:3px; font-size:11px;">&nbsp;</div>
                     </div>
                     <div style="width:28%; text-align:center;">
                         <div style="margin-bottom:24px;">Recommending Approval</div>
-                        <div style="margin-bottom:14px; display:inline-block; border-bottom:1px solid #000; width:68%; padding-bottom:3px;">DR. ALBERTO A. JUMAO-AS JR.</div>
-                        <div style="margin-top:10px; font-size:11px;">VP Academics and Research</div>
+                        <div style="margin-bottom:3px; display:inline-block; border-bottom:1px solid #000; width:68%; padding-bottom:3px;">DR. ALBERTO A. JUMAO-AS JR.</div>
+                        <div style="margin-top:3px; font-size:11px;">VP Academics and Research</div>
                     </div>
                 </div>
 
                 <div style="display:flex; justify-content:center; gap:100px; margin-top:26px; font-size:11px;">
                     <div style="width:34%; min-width:240px; text-align:center;">
                         <div style="margin-bottom:24px;">Reviewed by:</div>
-                        <div style="margin-bottom:14px; display:inline-block; border-bottom:1px solid #000; width:86%; padding-bottom:3px;">ENGR. EMMANUEL M. NADELA</div>
-                        <div style="margin-top:10px; font-size:11px;">Department Dean</div>
+                        <div style="margin-bottom:3px; display:inline-block; border-bottom:1px solid #000; width:86%; padding-bottom:3px;">ENGR. EMMANUEL M. NADELA</div>
+                        <div style="margin-top:3px; font-size:11px;">Department Dean</div>
                     </div>
                     <div style="width:34%; min-width:240px; text-align:center;">
                         <div style="margin-bottom:24px;">Approved by:</div>
-                        <div style="margin-bottom:14px; display:inline-block; border-bottom:1px solid #000; width:86%; padding-bottom:3px;">DR. GENESA P. PARAGADOS</div>
-                        <div style="margin-top:10px; font-size:11px;">President</div>
+                        <div style="margin-bottom:3px; display:inline-block; border-bottom:1px solid #000; width:86%; padding-bottom:3px;">DR. GENESA P. PARAGADOS</div>
+                        <div style="margin-top:3px; font-size:11px;">President</div>
                     </div>
                 </div>
             </div>
@@ -1011,7 +1692,7 @@ class ScheduleManager {
         if (!teacher) return this.showNotification('No teacher selected to export.', 'error');
         const el = this.generateTeacherLoadElement(teacher);
         document.body.appendChild(el);
-        this.createPdfFromElement(el).then(pdf => {
+        this.createPdfFromElement(el, { orientation: 'landscape', format: 'a4' }).then(pdf => {
             try {
                 const blob = pdf.output('blob');
                 const url = URL.createObjectURL(blob);
@@ -1035,7 +1716,7 @@ class ScheduleManager {
         if (!teacher) return this.showNotification('No teacher selected to print.', 'error');
         const el = this.generateTeacherLoadElement(teacher);
         document.body.appendChild(el);
-        this.createPdfFromElement(el).then(pdf => {
+        this.createPdfFromElement(el, { orientation: 'landscape', format: 'a4' }).then(pdf => {
             try {
                 const url = pdf.output('bloburl');
                 const w = window.open(url);
@@ -1066,8 +1747,22 @@ class ScheduleManager {
         }
     }
 
-    saveSchedules() { localStorage.setItem('schedules', JSON.stringify(this.schedules)); }
-    loadSchedules() { const data = localStorage.getItem('schedules'); return data ? JSON.parse(data) : []; }
+    storageKey(key) { return this.currentUser?.id ? `${key}:${this.currentUser.id}` : key; }
+    loadUserLocalData() {
+        this.schedules = this.loadSchedules();
+        this.teachers = this.loadTeachers();
+        this.rooms = this.loadRooms();
+        this.subjects = this.loadSubjects();
+        this.courses = this.loadCourses();
+        this.buildings = this.loadBuildings();
+        this.subjectDetails = this.loadListDetails('subjectDetails');
+        this.roomDetails = this.loadListDetails('roomDetails');
+        this.buildings = Array.from(new Set([...this.buildings, ...Object.values(this.roomDetails).map(info => info && info.building).filter(Boolean)]));
+        this.subjectColors = this.loadSubjectColors();
+        this.ensureUniqueSubjectColors();
+    }
+    saveSchedules() { localStorage.setItem(this.storageKey('schedules'), JSON.stringify(this.schedules)); }
+    loadSchedules() { const data = localStorage.getItem(this.storageKey('schedules')); return data ? JSON.parse(data) : []; }
 
     // Migrate older stored schedules using `sectionYear` to `courseYear`
     migrateSchedules() {
@@ -1084,19 +1779,26 @@ class ScheduleManager {
     }
 
     // teachers & rooms
-    saveTeachers() { localStorage.setItem('teachers', JSON.stringify(this.teachers)); }
-    loadTeachers() { const d = localStorage.getItem('teachers'); return d ? JSON.parse(d) : []; }
-    saveRooms() { localStorage.setItem('rooms', JSON.stringify(this.rooms)); }
-    loadRooms() { const d = localStorage.getItem('rooms'); return d ? JSON.parse(d) : []; }
+    saveTeachers() { localStorage.setItem(this.storageKey('teachers'), JSON.stringify(this.teachers)); }
+    loadTeachers() { const d = localStorage.getItem(this.storageKey('teachers')); return d ? JSON.parse(d) : []; }
+    saveRooms() { localStorage.setItem(this.storageKey('rooms'), JSON.stringify(this.rooms)); }
+    loadRooms() { const d = localStorage.getItem(this.storageKey('rooms')); return d ? JSON.parse(d) : []; }
+    saveBuildings() { localStorage.setItem(this.storageKey('buildings'), JSON.stringify(this.buildings || [])); }
+    loadBuildings() { const d = localStorage.getItem(this.storageKey('buildings')); return d ? JSON.parse(d) : []; }
 
     // subjects & courses
-    saveSubjects() { localStorage.setItem('subjects', JSON.stringify(this.subjects)); }
-    loadSubjects() { const d = localStorage.getItem('subjects'); return d ? JSON.parse(d) : []; }
-    saveCourses() { localStorage.setItem('courses', JSON.stringify(this.courses)); }
-    loadCourses() { const d = localStorage.getItem('courses'); return d ? JSON.parse(d) : []; }
-    saveSubjectColors() { localStorage.setItem('subjectColors', JSON.stringify(this.subjectColors || {})); }
+    saveSubjects() { localStorage.setItem(this.storageKey('subjects'), JSON.stringify(this.subjects)); }
+    loadSubjects() { const d = localStorage.getItem(this.storageKey('subjects')); return d ? JSON.parse(d) : []; }
+    saveCourses() { localStorage.setItem(this.storageKey('courses'), JSON.stringify(this.courses)); }
+    loadCourses() { const d = localStorage.getItem(this.storageKey('courses')); return d ? JSON.parse(d) : []; }
+    saveListDetails(key, details) { localStorage.setItem(this.storageKey(key), JSON.stringify(details || {})); }
+    loadListDetails(key) {
+        try { return JSON.parse(localStorage.getItem(this.storageKey(key))) || {}; }
+        catch (e) { return {}; }
+    }
+    saveSubjectColors() { localStorage.setItem(this.storageKey('subjectColors'), JSON.stringify(this.subjectColors || {})); }
     loadSubjectColors() {
-        const d = localStorage.getItem('subjectColors');
+        const d = localStorage.getItem(this.storageKey('subjectColors'));
         if (!d) return {};
         try {
             const parsed = JSON.parse(d) || {};
@@ -1236,12 +1938,53 @@ class ScheduleManager {
     renderCourseOptions() {
         const sel = document.getElementById('courseSelect');
         if (!sel) return;
-        sel.innerHTML = '<option value="">-- Select Course & Year --</option>' + this.courses.slice().sort((a,b)=>a.localeCompare(b)).map(c => `<option value="${c}">${c}</option>`).join('');
+        sel.innerHTML = '<option value="">-- Select Section --</option>' + this.courses.slice().sort((a,b)=>a.localeCompare(b)).map(c => `<option value="${c}">${c}</option>`).join('');
+    }
+
+    renderSectionScheduleOptions() {
+        const sel = document.getElementById('sectionScheduleSelect');
+        if (sel) {
+            const previous = sel.value;
+            sel.innerHTML = '<option value="">-- Select Section --</option>' + this.courses.slice().sort((a,b)=>a.localeCompare(b)).map(c => `<option value="${c}">${c}</option>`).join('');
+            if (this.courses.includes(previous)) sel.value = previous;
+        }
+        const list = document.getElementById('studentSectionList');
+        if (!list) return;
+        const sections = this.courses.slice().sort((a,b)=>a.localeCompare(b));
+        if (!sections.length) {
+            list.innerHTML = '<p class="empty-message">No student schedules yet. Add a class to get started!</p>';
+            return;
+        }
+        list.innerHTML = sections.map(section => `
+            <article class="student-section-card">
+                <div><p class="eyebrow">SECTION TIMETABLE</p><h3>${section}</h3><span>View this section's weekly classes, teachers, and rooms.</span></div>
+                <button type="button" class="btn-view" data-section-timetable="${section}">View Timetable</button>
+            </article>
+        `).join('');
+        list.querySelectorAll('[data-section-timetable]').forEach(btn => btn.addEventListener('click', () => this.showSectionSchedule(btn.dataset.sectionTimetable)));
     }
 
     renderRoomOptions() {
         const sel = document.getElementById('roomSelect');
-        sel.innerHTML = '<option value="">-- Select Room --</option>' + this.rooms.slice().sort((a,b)=>a.localeCompare(b)).map(r => `<option value="${r}">${r}</option>`).join('');
+        const building = document.getElementById('buildingSelect')?.value || '';
+        const rooms = this.rooms.filter(r => !building || (this.roomDetails[r] || {}).building === building);
+        sel.innerHTML = '<option value="">-- Select Room --</option>' + rooms.slice().sort((a,b)=>a.localeCompare(b)).map(r => `<option value="${r}">${r}</option>`).join('');
+    }
+
+    renderBuildingOptions() {
+        const sel = document.getElementById('buildingSelect');
+        if (!sel) return;
+        const previous = sel.value;
+        sel.innerHTML = '<option value="">-- Select Building --</option>' + this.buildings.slice().sort((a,b)=>a.localeCompare(b)).map(b => `<option value="${b}">${b}</option>`).join('');
+        if (this.buildings.includes(previous)) sel.value = previous;
+    }
+
+    renderRoomBuildingOptions() {
+        const sel = document.getElementById('newRoomBuilding');
+        if (!sel) return;
+        const previous = sel.value;
+        sel.innerHTML = '<option value="">-- Select building first --</option>' + this.buildings.slice().sort((a,b)=>a.localeCompare(b)).map(b => `<option value="${b}">${b}</option>`).join('');
+        if (this.buildings.includes(previous)) sel.value = previous;
     }
 
     // remove rooms that conflict with selected time/day
@@ -1250,6 +1993,8 @@ class ScheduleManager {
         const startTime = document.getElementById('startTime').value;
         const endTime = document.getElementById('endTime').value;
         const sel = document.getElementById('roomSelect');
+        const previousValue = sel.value;
+        const building = document.getElementById('buildingSelect').value;
 
         // if no time/day selected, show all
         if (!day || !startTime || !endTime) {
@@ -1259,14 +2004,15 @@ class ScheduleManager {
 
         const available = this.rooms.filter(r => {
             // if any existing schedule uses room r at overlapping time on same day, exclude
-            return !this.schedules.some(s => s.room.toLowerCase() === r.toLowerCase() && s.day === day && this.timesOverlap(s.startTime, s.endTime, startTime, endTime));
+            return (!building || (this.roomDetails[r] || {}).building === building) && !this.schedules.some(s => s.room.toLowerCase() === r.toLowerCase() && s.day === day && this.timesOverlap(s.startTime, s.endTime, startTime, endTime));
         });
 
         // sort available rooms
         const sortedAvailable = available.slice().sort((a,b)=>a.localeCompare(b));
         sel.innerHTML = '<option value="">-- Select Room --</option>' + sortedAvailable.map(r => `<option value="${r}">${r}</option>`).join('');
+        if (sortedAvailable.includes(previousValue)) sel.value = previousValue;
         const hint = document.getElementById('roomHint');
-        hint.textContent = available.length === 0 ? 'No rooms available for this time.' : 'Room list updated for selected time.';
+        hint.textContent = available.length === 0 ? 'No rooms are available for this time.' : `${available.length} room${available.length === 1 ? '' : 's'} available for this time.`;
     }
 
     showIntroIfNeeded() {
@@ -1304,10 +2050,386 @@ class ScheduleManager {
             btn.title = ok ? '' : 'Please add teachers, subjects, courses & rooms before plotting schedules.';
         }
     }
+
+    // --- Account access ---
+    initializeAuth() {
+        this.authMode = 'signin';
+        this.recoveryMode = window.location.hash.includes('type=recovery') || window.location.hash.includes('reset-password') || new URLSearchParams(window.location.search).has('code');
+        if (!this.supabase) {
+            this.setAuthMessage('Supabase is not configured yet. Add a project URL and publishable key.', 'error');
+            return;
+        }
+        this.supabase.auth.getSession().then(({ data, error }) => {
+            if (error) this.setAuthMessage(error.message, 'error');
+            if (this.recoveryMode) this.showPasswordRecovery();
+            this.applySession(data && data.session);
+        });
+        this.supabase.auth.onAuthStateChange((event, session) => {
+            if (event === 'PASSWORD_RECOVERY') this.showPasswordRecovery();
+            this.applySession(session);
+        });
+    }
+
+    showPasswordRecovery() {
+        this.recoveryMode = true;
+        document.getElementById('authForm')?.classList.add('hidden');
+        document.getElementById('resetPasswordForm')?.classList.remove('hidden');
+        document.getElementById('authTitle').textContent = 'Set a new password';
+        document.getElementById('authSubtitle').textContent = 'Choose a new password for your Schedule Studio account.';
+        document.getElementById('authModeToggle')?.classList.add('hidden');
+        document.getElementById('forgotPasswordBtn')?.classList.add('hidden');
+    }
+
+    async handleSetNewPassword(event) {
+        event.preventDefault();
+        const { data: sessionData } = await this.supabase.auth.getSession();
+        if (!sessionData?.session) {
+            return this.setAuthMessage('The reset link did not create a recovery session. Request a new link and open it on this exact website address.', 'error');
+        }
+        const password = document.getElementById('resetPassword').value;
+        const confirmation = document.getElementById('resetPasswordConfirm').value;
+        if (password !== confirmation) return this.setAuthMessage('Passwords do not match.', 'error');
+        const { error } = await this.supabase.auth.updateUser({ password });
+        if (error) {
+            const message = /session missing|invalid.*token|expired/i.test(error.message || '')
+                ? 'This password-reset link is expired or incomplete. Request a new reset email and open the newest link directly.'
+                : error.message;
+            return this.setAuthMessage(message, 'error');
+        }
+        this.setAuthMessage('Password updated. You can now sign in normally.', 'success');
+        this.recoveryMode = false;
+        window.history.replaceState({}, document.title, window.location.pathname);
+        document.getElementById('resetPasswordForm').classList.add('hidden');
+        document.getElementById('authForm').classList.remove('hidden');
+        document.getElementById('authTitle').textContent = 'Welcome to Schedule Studio';
+        document.getElementById('authSubtitle').textContent = 'Sign in to access your private scheduling workspace.';
+        document.getElementById('authModeToggle')?.classList.remove('hidden');
+    }
+
+    applySession(session) {
+        const authScreen = document.getElementById('authScreen');
+        const appShell = document.getElementById('appShell');
+        const identity = document.getElementById('userIdentity');
+        const signOutBtn = document.getElementById('signOutBtn');
+        this.currentUser = session ? session.user : null;
+        if (!session || this.recoveryMode) {
+            if (!session) {
+                // Remove the previous account from memory immediately. Keep its
+                // account-scoped localStorage intact for offline recovery, but
+                // never leave it active while signed out or switching users.
+                this.ownerViewingUserId = null;
+                this.ownerSelectedUserId = null;
+                this.ownerAllSchedules = [];
+                this.ownerProfiles = [];
+                this.ownerCatalog = {};
+                this.isOwner = false;
+                this.schedules = [];
+                this.teachers = [];
+                this.subjects = [];
+                this.courses = [];
+                this.rooms = [];
+                this.buildings = [];
+                this.subjectDetails = {};
+                this.roomDetails = {};
+                document.getElementById('appShell')?.classList.remove('owner-mode', 'owner-user-mode');
+                document.getElementById('ownerBackToUsers')?.classList.add('hidden');
+            }
+            if (authScreen) authScreen.classList.remove('hidden');
+            if (appShell) appShell.classList.add('hidden');
+            if (identity) identity.classList.add('hidden');
+            if (signOutBtn) signOutBtn.classList.add('hidden');
+            return;
+        }
+        if (authScreen) authScreen.classList.add('hidden');
+        if (appShell) appShell.classList.remove('hidden');
+        this.loadUserLocalData();
+        // When Supabase is available, do not render cached local records first.
+        // The authoritative owner/member view should come from the database.
+        if (this.remoteEnabled) {
+            this.schedules = [];
+            this.teachers = [];
+            this.rooms = [];
+            this.subjects = [];
+            this.courses = [];
+            this.buildings = [];
+            this.subjectDetails = {};
+            this.roomDetails = {};
+            this.render();
+        }
+        this.render();
+        if (identity) {
+            identity.textContent = session.user.email || 'Signed in';
+            identity.classList.remove('hidden');
+        }
+        if (signOutBtn) signOutBtn.classList.remove('hidden');
+        if (!this.ownerViewingUserId) document.getElementById('ownerBackToUsers')?.classList.add('hidden');
+        this.syncFromRemote();
+    }
+
+    toggleAuthMode() {
+        this.authMode = this.authMode === 'signin' ? 'signup' : 'signin';
+        const signingUp = this.authMode === 'signup';
+        document.getElementById('authTitle').textContent = signingUp ? 'Create your account' : 'Welcome to Schedule Studio';
+        document.getElementById('authSubtitle').textContent = signingUp ? 'Your schedules stay private to your account.' : 'Sign in to access your private scheduling workspace.';
+        document.getElementById('authSubmit').innerHTML = signingUp ? 'Create account <span>→</span>' : 'Sign in <span>→</span>';
+        document.getElementById('authModeToggle').textContent = signingUp ? 'Already have an account? Sign in' : 'Need an account? Create one';
+        document.getElementById('forgotPasswordBtn').classList.toggle('hidden', signingUp);
+        document.getElementById('authName').classList.toggle('hidden', !signingUp);
+        document.getElementById('authNameLabel').classList.toggle('hidden', !signingUp);
+        document.getElementById('authPassword').autocomplete = signingUp ? 'new-password' : 'current-password';
+        this.setAuthMessage('');
+    }
+
+    setAuthMessage(message, type = '') {
+        const el = document.getElementById('authMessage');
+        if (!el) return;
+        el.textContent = message;
+        el.className = `auth-message ${type === 'success' ? 'success' : ''}`;
+    }
+
+    clearAuthFields() {
+        ['authEmail', 'authPassword', 'authName', 'resetPassword', 'resetPasswordConfirm'].forEach(id => {
+            const field = document.getElementById(id);
+            if (field) field.value = '';
+        });
+    }
+
+    returnToSignIn(message = '') {
+        if (this.authMode === 'signup') this.toggleAuthMode();
+        this.clearAuthFields();
+        this.setAuthMessage(message, message ? 'success' : '');
+    }
+
+    async handleAuthSubmit(event) {
+        event.preventDefault();
+        if (!this.supabase) return this.setAuthMessage('Supabase is not configured yet.', 'error');
+        const email = document.getElementById('authEmail').value.trim();
+        const password = document.getElementById('authPassword').value;
+        const fullName = document.getElementById('authName').value.trim();
+        const validEmail = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
+        if (!validEmail) return this.setAuthMessage('Please enter a valid email address.', 'error');
+        const button = document.getElementById('authSubmit');
+        button.disabled = true;
+        this.setAuthMessage('');
+        try {
+            let result;
+            if (this.authMode === 'signup') {
+                result = await this.supabase.auth.signUp({
+                    email,
+                    password,
+                    options: { data: { full_name: fullName }, emailRedirectTo: window.location.origin }
+                });
+            } else {
+                result = await this.supabase.auth.signInWithPassword({ email, password });
+            }
+            if (result.error) throw result.error;
+            if (this.authMode === 'signup' && !result.data.session) {
+                this.returnToSignIn('Account created. You can now sign in.');
+            } else if (this.authMode === 'signup') {
+                await this.supabase.auth.signOut();
+                this.returnToSignIn('Account created. You can now sign in.');
+            } else {
+                this.setAuthMessage('Signed in successfully.', 'success');
+            }
+        } catch (error) {
+            const message = this.authMode === 'signin'
+                ? 'Email or password is incorrect.'
+                : (error.message || 'Unable to create the account. Please try again.');
+            this.setAuthMessage(message, 'error');
+        } finally {
+            button.disabled = false;
+        }
+    }
+
+    async handlePasswordReset() {
+        const email = document.getElementById('authEmail').value.trim();
+        if (!email) return this.setAuthMessage('Enter your email address first, then choose Forgot password.', 'error');
+        if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return this.setAuthMessage('Please enter the email address used for your account.', 'error');
+        const { error } = await this.supabase.auth.resetPasswordForEmail(email, { redirectTo: `${window.location.origin}${window.location.pathname}#reset-password` });
+        const resetMessage = error && /rate limit/i.test(error.message || '')
+            ? 'Too many reset emails were requested. Please wait before trying again.'
+            : (error ? 'We could not send the reset email. Please try again later.' : 'Password reset instructions have been sent.');
+        this.setAuthMessage(resetMessage, error ? 'error' : 'success');
+    }
+
+    async signOut() {
+        const { error } = await this.supabase.auth.signOut();
+        if (error) this.showNotification(error.message, 'error');
+        this.clearAuthFields();
+        this.authMode = 'signin';
+        this.recoveryMode = false;
+        sessionStorage.removeItem('scheduleStudioOwnerUser');
+    }
+
+    // --- Supabase / remote helpers (optional) ---
+    initSupabase() {
+        try {
+            const cfg = window.SUPABASE_CONFIG || null;
+            this.supabase = null;
+            this.remoteEnabled = false;
+            const statusEl = document.getElementById('remoteStatus');
+            if (!cfg || !cfg.url || !cfg.anonKey || cfg.url.includes('YOUR-PROJECT') || cfg.anonKey.includes('goes-here')) {
+                if (statusEl) statusEl.textContent = 'Remote: not configured';
+                return;
+            }
+            if (!window.supabase || !window.supabase.createClient) {
+                if (statusEl) statusEl.textContent = 'Remote: client missing';
+                return;
+            }
+            this.supabase = window.supabase.createClient(cfg.url, cfg.anonKey);
+            this.remoteEnabled = true;
+            if (statusEl) statusEl.textContent = 'Remote: ready to sign in';
+        } catch (e) {
+            const statusEl = document.getElementById('remoteStatus');
+            if (statusEl) statusEl.textContent = 'Remote: init error';
+            console.warn('Supabase init failed', e);
+        }
+    }
+
+    async syncFromRemote() {
+        if (!this.remoteEnabled || !this.supabase || !this.currentUser) return;
+        try {
+            this.showNotification('Syncing from remote...', 'success');
+            this.ownerCatalog = {};
+            // fetch simple lists: subjects, teachers, rooms, courses
+            const tables = ['subjects','teachers','rooms','courses'];
+            for (const t of tables) {
+                const columns = t === 'subjects' ? 'id,owner_id,name,course_code,units' : t === 'rooms' ? 'id,owner_id,name,building' : 'id,owner_id,name';
+                const { data, error } = await this.supabase.from(t).select(columns).order('name', { ascending: true });
+                if (error) {
+                    console.warn('Supabase read error for', t, error.message || error);
+                    continue;
+                }
+                if (!data) continue;
+                data.forEach(row => {
+                    if (!row.owner_id) return;
+                    if (!this.ownerCatalog[row.owner_id]) this.ownerCatalog[row.owner_id] = { teachers: [], subjects: [], rooms: [], courses: [] };
+                    this.ownerCatalog[row.owner_id][t].push(row);
+                });
+                const names = data.map(r => String(r.name || '').toUpperCase()).filter(Boolean);
+                if (t === 'subjects') {
+                    this.subjects = names;
+                    data.forEach(row => { this.subjectDetails[String(row.name || '').toUpperCase()] = { courseCode: String(row.course_code || '').toUpperCase(), units: row.units ?? 3 }; });
+                    this.saveSubjects(); this.saveListDetails('subjectDetails', this.subjectDetails); this.ensureUniqueSubjectColors();
+                }
+                if (t === 'teachers') { this.teachers = names; this.saveTeachers(); }
+                if (t === 'rooms') {
+                    this.rooms = names;
+                    data.forEach(row => { this.roomDetails[String(row.name || '').toUpperCase()] = { building: String(row.building || '').toUpperCase() }; });
+                    this.buildings = Array.from(new Set([...this.buildings, ...data.map(row => String(row.building || '').toUpperCase()).filter(Boolean)]));
+                    this.saveBuildings();
+                    this.saveRooms(); this.saveListDetails('roomDetails', this.roomDetails);
+                }
+                if (t === 'courses') { this.courses = names; this.saveCourses(); }
+            }
+            const { data: scheduleRows, error: scheduleError } = await this.supabase
+                .from('schedules')
+                .select('id,owner_id,teacher_name,subject,course_year,course_code,units,building,overload,day,start_time,end_time,room')
+                .order('created_at', { ascending: true });
+            if (scheduleError) throw scheduleError;
+            this.schedules = (scheduleRows || []).map(row => ({
+                id: row.id,
+                ownerId: row.owner_id || this.currentUser?.id || '',
+                teacherName: String(row.teacher_name || '').toUpperCase(),
+                subject: String(row.subject || '').toUpperCase(),
+                courseYear: String(row.course_year || '').toUpperCase(),
+                courseCode: String(row.course_code || '').toUpperCase(),
+                units: row.units,
+                building: String(row.building || '').toUpperCase(),
+                overload: row.overload || '',
+                day: row.day,
+                startTime: row.start_time ? row.start_time.slice(0, 5) : '',
+                endTime: row.end_time ? row.end_time.slice(0, 5) : '',
+                room: String(row.room || '').toUpperCase()
+            }));
+            this.ownerAllSchedules = [...this.schedules];
+            // Owners/school admins can read the directory through the protected
+            // profiles policies. Regular members receive no rows here and keep
+            // the owner console hidden.
+            const { data: profiles, error: profileError } = await this.supabase
+                .from('profiles')
+                .select('id,email,full_name,department,role,created_at')
+                .order('created_at', { ascending: true });
+            if (!profileError && Array.isArray(profiles)) {
+                this.ownerProfiles = profiles;
+                const own = profiles.find(profile => profile.id === this.currentUser?.id);
+                this.currentProfile = own || null;
+                this.isOwner = ['owner', 'school_admin'].includes(String(own?.role || '').toLowerCase());
+                const shell = document.getElementById('appShell');
+                if (shell) shell.classList.toggle('owner-mode', this.isOwner);
+                if (this.isOwner) {
+                    document.querySelectorAll('.toggle-btn').forEach(btn => btn.classList.remove('active'));
+                    document.querySelectorAll('.view-content').forEach(panel => panel.classList.remove('active'));
+                    document.getElementById('ownerView')?.classList.add('active');
+                    const rememberedUser = this.pendingOwnerViewingUserId && this.ownerProfiles.some(profile => profile.id === this.pendingOwnerViewingUserId && !['owner', 'school_admin'].includes(String(profile.role || '').toLowerCase()))
+                        ? this.pendingOwnerViewingUserId : null;
+                    if (rememberedUser) {
+                        this.pendingOwnerViewingUserId = null;
+                        this.selectOwnerUser(rememberedUser);
+                    }
+                }
+                if (!this.isOwner) this.resetToMemberStartView();
+            } else {
+                this.ownerProfiles = [];
+                this.currentProfile = null;
+                this.isOwner = false;
+                this.resetToMemberStartView();
+            }
+            this.saveSchedules();
+            // re-render lists
+            this.renderSubjectOptions();
+            this.renderTeacherOptions();
+            this.renderRoomOptions();
+            this.renderBuildingOptions();
+            this.renderRoomBuildingOptions();
+            this.renderCourseOptions();
+            this.renderSectionScheduleOptions();
+            this.checkPrereqs();
+            this.render();
+            this.showNotification('Remote sync complete.', 'success');
+        } catch (err) {
+            console.error('Sync failed', err);
+            this.showNotification('Remote sync failed. See console.', 'error');
+        }
+    }
+
+    async addSubjectToRemote(name) {
+        if (!this.remoteEnabled || !this.supabase) return;
+        try {
+            await this.supabase.from('subjects').insert({ name }).select();
+        } catch (e) {
+            console.warn('Failed to insert subject remotely', e);
+        }
+    }
+
+    async addListItemToRemote(table, item) {
+        if (!this.remoteEnabled) return true;
+        if (!this.currentUser) {
+            this.showNotification('Please sign in before adding items.', 'error');
+            return false;
+        }
+        const payload = typeof item === 'string' ? { name: item } : item;
+        if (this.ownerViewingUserId && ['teachers', 'subjects', 'rooms', 'courses'].includes(table)) payload.owner_id = this.ownerViewingUserId;
+        const { error } = await this.supabase.from(table).insert(payload);
+        if (!error) return true;
+        this.showNotification(error.message || `Unable to save ${payload.name}.`, 'error');
+        return false;
+    }
+
+    promptForRemoteConfig() {
+        // simple prompt to let user paste a Supabase URL and anon key (quick way to connect locally)
+        const url = prompt('Supabase URL (example: https://xyz.supabase.co)');
+        if (!url) return;
+        const key = prompt('Supabase anon key (service role not required)');
+        if (!key) return;
+        window.SUPABASE_CONFIG = { url: url.trim(), anonKey: key.trim() };
+        this.initSupabase();
+    }
 }
 
 // Initialize the application
 let manager;
-document.addEventListener('DOMContentLoaded', () => {
+document.addEventListener('DOMContentLoaded', async () => {
+    if (window.supabaseConfigReady) await window.supabaseConfigReady;
     manager = new ScheduleManager();
 });
