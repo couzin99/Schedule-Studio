@@ -383,8 +383,16 @@ class ScheduleManager {
             return 'Please fill in all fields.';
         }
 
-        if (schedule.startTime >= schedule.endTime) {
+        const startMinutes = this.timeToMinutes(schedule.startTime);
+        const endMinutes = this.timeToMinutes(schedule.endTime);
+        if (!Number.isFinite(startMinutes) || !Number.isFinite(endMinutes)) {
+            return 'Please enter a valid start and end time.';
+        }
+        if (startMinutes >= endMinutes) {
             return 'End time must be after start time.';
+        }
+        if (endMinutes - startMinutes < 60) {
+            return 'A class must be at least 1 hour (60 minutes) long.';
         }
 
         const [sh] = schedule.startTime.split(':').map(x => parseInt(x));
