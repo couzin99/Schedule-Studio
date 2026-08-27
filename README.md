@@ -4,11 +4,13 @@ A simple web application for managing teacher schedules with automatic conflict 
 
 ## Features
 
-✅ **Add New Schedules** - Create schedules for teachers with subject, day, time, and room information.
+✅ **Add New Schedules** - Create one class assignment with as many weekly day/time/building/room meetings as needed.
 
 ✅ **Conflict Detection** - Automatically detects:
 - **Teacher Conflicts**: Prevents the same teacher from being scheduled at two different places at the same time
 - **Room Conflicts**: Prevents the same room from being double-booked at the same time
+- **Section Conflicts**: Prevents a section from having overlapping classes
+- The same subject can be scheduled for the same section and teacher on multiple different days.
 
 ✅ **Real-time Notifications** - Get error messages when trying to add conflicting schedules
 
@@ -28,17 +30,15 @@ A simple web application for managing teacher schedules with automatic conflict 
    - Simply open `index.html` in any web browser
 
 ### 2. **Add a Schedule**
-   - Fill in the form on the left side:
+    - Fill in the class details on the left side:
      - **Teacher Name**: Enter the teacher's full name (e.g., "Juan Dela Cruz")
      - **Subject**: Enter the subject being taught (e.g., "Mathematics")
-     - **Day**: Select the day of the week (Monday - Saturday)
-     - **Start Time**: Select when the class starts (7:00 AM - 7:00 PM)
-     - **End Time**: Select when the class ends (must be after start time)
-     - **Room**: Enter the room number or name (e.g., "Room 101")
+   - For each weekly meeting, select one or more **Days**, **Start Time**, **End Time**, **Campus Building**, and **Room**. For example, check both Monday and Thursday when the class meets at the same time on both days.
+   - Click **"Add another meeting"** when another day needs a different time, building, or room. There is no limit to the number of meeting rows.
    - Click **"Add Schedule"** to add the schedule
 
 ### 3. **Conflict Detection**
-   - If there's a conflict (same teacher scheduled twice or same room booked twice in overlapping times), you'll see an error message
+   - If there's a conflict (same teacher, same room, or same section booked twice in overlapping times on the same day), you'll see an error message
    - The system **won't allow you to add the schedule** until the conflict is resolved
    - Example error messages:
      ```
@@ -76,16 +76,19 @@ A simple web application for managing teacher schedules with automatic conflict 
 
 ## Example Workflow
 
-1. Add Teacher A for Math on Monday 8:00 AM - 9:00 AM in Room 101
+1. Add Teacher A for Math for section BSCE-1A on Monday 8:00 AM - 9:00 AM in Room 101
    ✓ Success
 
-2. Try to add Teacher A for Science on Monday 8:30 AM - 9:30 AM in Room 102
+2. Click **"Add another meeting"** and add the same Math class on Thursday 10:00 AM - 11:00 AM in Room 102
+   ✓ Success: one subject can meet on multiple days
+
+3. Try to add Teacher A for Science on Monday 8:30 AM - 9:30 AM in Room 102
    ✗ Error: Teacher conflict detected!
 
-3. Delete the first schedule and try again
+4. Delete the first schedule and try again
    ✓ Success
 
-4. Now add another teacher for Math on Monday 8:00 AM - 9:00 AM in Room 101
+5. Now add another teacher for Math on Monday 8:00 AM - 9:00 AM in Room 101
    ✗ Error: Room conflict detected!
 
 ## Data Storage

@@ -51,6 +51,10 @@ class ScheduleManager {
 
         document.getElementById('addTeacherBtn').addEventListener('click', () => this.handleAddTeacher());
         document.getElementById('addRoomBtn').addEventListener('click', () => this.handleAddRoom());
+        document.getElementById('addScheduleSlotBtn')?.addEventListener('click', () => this.addScheduleSlot());
+        document.getElementById('scheduleSlots')?.addEventListener('change', e => {
+            if (e.target.matches('.schedule-slot select, .schedule-slot input')) this.updateRoomOptions(e.target.closest('.schedule-slot'));
+        });
         document.getElementById('addBuildingBtn').addEventListener('click', () => this.handleAddBuilding());
         const addSubjectBtn = document.getElementById('addSubjectBtn');
         if (addSubjectBtn) addSubjectBtn.addEventListener('click', () => this.handleAddSubject());
@@ -68,10 +72,6 @@ class ScheduleManager {
         if (viewLoadBtn) viewLoadBtn.addEventListener('click', () => this.viewTeacherLoadPdf());
 
         // update available rooms when day/time changes
-        ['day', 'startTime', 'endTime', 'buildingSelect'].forEach(id => {
-            document.getElementById(id).addEventListener('change', () => this.updateRoomOptions());
-        });
-
         // Re-check prerequisites when select lists change
         ['teacherSelect','subjectSelect','courseSelect','buildingSelect','roomSelect'].forEach(id => {
             const el = document.getElementById(id);
@@ -299,81 +299,48 @@ class ScheduleManager {
         const teacherName = document.getElementById('teacherSelect').value;
         const subject = document.getElementById('subjectSelect').value;
         const courseYear = document.getElementById('courseSelect').value;
-        const building = document.getElementById('buildingSelect').value;
-        const day = document.getElementById('day').value;
-        const startTime = document.getElementById('startTime').value;
-        const endTime = document.getElementById('endTime').value;
-        const room = document.getElementById('roomSelect').value;
         const subjectInfo = this.subjectDetails[subject] || {};
-        const roomInfo = this.roomDetails[room] || {};
         const courseCode = subjectInfo.courseCode || '';
         const parsedUnits = Number.parseInt(subjectInfo.units, 10);
         const unitsVal = Number.isFinite(parsedUnits) ? parsedUnits : 3;
-        const selectedBuilding = building || roomInfo.building || '';
-        const checker = this.checkConflicts({teacherName, subject, courseYear, day, startTime, endTime, room});
-
-        const schedule = {
-            id: Date.now(),
-            ownerId: this.ownerViewingUserId || this.currentUser?.id || '',
-            teacherName,
-            subject,
-            courseYear,
-            courseCode,
-            units: unitsVal,
-            building: selectedBuilding,
-            overload: '',
-            day,
-            startTime,
-            endTime,
-            room
-        };
-
-        // Validation
-        const validationError = this.validateSchedule(schedule);
-        if (validationError) {
-            this.showNotification(validationError, 'error');
-            return;
+        const slots = [...document.querySelectorAll('#scheduleSlots .schedule-slot')];
+        if (slots.some(slot => !slot.querySelector('input[name="days"]:checked'))) {
+            return this.showNotification('Select at least one day for every class meeting.', 'error');
         }
-
-        // Check for conflicts with structured details
-        const conflictCheck = this.checkConflicts(schedule);
-        if (conflictCheck.hasConflict) {
-            // Format clear message
-            const bullets = conflictCheck.conflicts.map(c => `<li><strong>${c.type}:</strong> ${c.message}</li>`).join('');
-            const html = `⚠️ Conflict detected:<ul style="margin-top:8px">${bullets}</ul>`;
-            this.showNotification(html, 'error');
-            return;
-        }
-
-        // Store the schedule in the signed-in user's private Supabase records first.
-        if (this.remoteEnabled) {
-            const { data, error } = await this.supabase.from('schedules').insert({
-                owner_id: this.ownerViewingUserId || this.currentUser?.id,
-                teacher_name: schedule.teacherName,
-                subject: schedule.subject,
-                course_year: schedule.courseYear,
-                course_code: schedule.courseCode || null,
-                units: schedule.units,
-                building: schedule.building || null,
-                overload: null,
-                day: schedule.day,
-                start_time: schedule.startTime,
-                end_time: schedule.endTime,
-                room: schedule.room
-            }).select().single();
-            if (error) {
-                this.showNotification(error.message || 'Unable to save this schedule.', 'error');
-                return;
+        const schedules = slots.flatMap((slot, index) => {
+            const legacyIds = { building: 'buildingSelect', room: 'roomSelect' };
+            const value = field => slot.querySelector(`[data-field="${field}"]`)?.value || document.getElementById(legacyIds[field] || field)?.value || '';
+            const room = value('room');
+            const roomInfo = this.roomDetails[room] || {};
+            const days = [...slot.querySelectorAll('input[name="days"]:checked')].map(input => input.value);
+            return days.map((day, dayIndex) => ({ id: Date.now() + index * 100 + dayIndex, ownerId: this.ownerViewingUserId || this.currentUser?.id || '', teacherName, subject, courseYear, courseCode, units: unitsVal, building: value('building') || roomInfo.building || '', overload: '', day, startTime: value('startTime'), endTime: value('endTime'), room }));
+        });
+        const pending = [];
+        for (const schedule of schedules) {
+            const validationError = this.validateSchedule(schedule);
+            if (validationError) return this.showNotification(validationError, 'error');
+            const conflictCheck = this.checkConflicts(schedule, null, pending);
+            if (conflictCheck.hasConflict) {
+                const bullets = conflictCheck.conflicts.map(c => `<li><strong>${c.type}:</strong> ${c.message}</li>`).join('');
+                return this.showNotification(`⚠️ Conflict detected:<ul style="margin-top:8px">${bullets}</ul>`, 'error');
             }
-            schedule.id = data.id;
+            pending.push(schedule);
         }
 
-        // Add schedule locally after the database accepts it
-        this.schedules.push(schedule);
-        if (this.ownerViewingUserId) this.ownerAllSchedules.push(schedule);
+        if (this.remoteEnabled) {
+            for (const schedule of schedules) {
+                const { data, error } = await this.supabase.from('schedules').insert({ owner_id: this.ownerViewingUserId || this.currentUser?.id, teacher_name: schedule.teacherName, subject: schedule.subject, course_year: schedule.courseYear, course_code: schedule.courseCode || null, units: schedule.units, building: schedule.building || null, overload: null, day: schedule.day, start_time: schedule.startTime, end_time: schedule.endTime, room: schedule.room }).select().single();
+                if (error) return this.showNotification(error.message || 'Unable to save this schedule.', 'error');
+                schedule.id = data.id;
+            }
+        }
+
+        this.schedules.push(...schedules);
+        if (this.ownerViewingUserId) this.ownerAllSchedules.push(...schedules);
         this.saveSchedules();
-        this.showNotification('✓ Schedule added successfully!', 'success');
+        this.showNotification(`✓ ${schedules.length} meeting${schedules.length === 1 ? '' : 's'} added successfully!`, 'success');
         document.getElementById('scheduleForm').reset();
+        this.resetScheduleSlots();
         this.render();
         this.updateRoomOptions();
     }
@@ -406,21 +373,10 @@ class ScheduleManager {
     }
 
     // returns structured conflict info
-    checkConflicts(newSchedule, excludeId = null) {
+    checkConflicts(newSchedule, excludeId = null, additionalSchedules = []) {
         const conflicts = [];
-        for (const schedule of this.schedules) {
+        for (const schedule of [...this.schedules, ...additionalSchedules]) {
             if (excludeId !== null && String(schedule.id) === String(excludeId)) continue;
-            // A section may only take a subject once. The same subject can still
-            // be assigned to other sections, so both values must match.
-            if (schedule.courseYear && newSchedule.courseYear && schedule.subject && newSchedule.subject &&
-                schedule.courseYear.trim().toLowerCase() === newSchedule.courseYear.trim().toLowerCase() &&
-                schedule.subject.trim().toLowerCase() === newSchedule.subject.trim().toLowerCase()) {
-                conflicts.push({
-                    type: 'Duplicate subject',
-                    message: `${newSchedule.subject} is already assigned to ${newSchedule.courseYear}. A section cannot have the same subject more than once.`
-                });
-            }
-
             if (schedule.day !== newSchedule.day) continue;
 
             // teacher conflict
@@ -706,10 +662,44 @@ class ScheduleManager {
         const form = document.getElementById('scheduleForm');
         if (!form) return;
         form.reset();
+        this.resetScheduleSlots();
         this.renderRoomOptions();
         const hint = document.getElementById('roomHint');
         if (hint) hint.textContent = 'Pick a day and time to see available rooms.';
         document.getElementById('notification')?.replaceChildren();
+    }
+
+    addScheduleSlot() {
+        const container = document.getElementById('scheduleSlots');
+        if (!container) return;
+        const index = container.querySelectorAll('.schedule-slot').length;
+        const days = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+        const buildings = this.buildings.slice().sort((a, b) => a.localeCompare(b));
+        const slot = document.createElement('div');
+        slot.className = 'schedule-slot';
+        slot.dataset.slotIndex = index;
+        slot.innerHTML = `
+            <div class="schedule-slot-heading"><strong>Class meeting ${index + 1}</strong><button type="button" class="remove-schedule-slot" aria-label="Remove meeting">Remove</button></div>
+            <div class="form-group"><label>Start Time:</label><input type="time" data-field="startTime" required></div>
+            <div class="form-group"><label>End Time:</label><input type="time" data-field="endTime" required></div>
+            <div class="form-group"><span class="field-label">Days:</span><div class="day-options" role="group" aria-label="Days for class meeting ${index + 1}">${days.map(day => `<label><input type="checkbox" name="days" value="${day}">${day.slice(0, 3)}</label>`).join('')}</div></div>
+            <div class="form-group"><label>Campus Building:</label><select data-field="building" required><option value="">-- Select Building --</option>${buildings.map(building => `<option value="${building}">${building}</option>`).join('')}</select></div>
+            <div class="form-group"><label>Room:</label><select data-field="room" required><option value="">-- Select Room --</option></select><small class="room-hint">Pick a day and time to see available rooms.</small></div>`;
+        container.appendChild(slot);
+        slot.querySelector('.remove-schedule-slot').addEventListener('click', () => {
+            slot.remove();
+            [...container.querySelectorAll('.schedule-slot')].forEach((item, itemIndex) => {
+                item.querySelector('.schedule-slot-heading strong').textContent = `Class meeting ${itemIndex + 1}`;
+            });
+        });
+        this.updateRoomOptions(slot);
+    }
+
+    resetScheduleSlots() {
+        const container = document.getElementById('scheduleSlots');
+        if (!container) return;
+        container.querySelectorAll('.schedule-slot:not(:first-child)').forEach(slot => slot.remove());
+        this.updateRoomOptions(container.querySelector('.schedule-slot'));
     }
 
     renderStudentsView() {
@@ -1990,9 +1980,11 @@ class ScheduleManager {
         list.querySelectorAll('[data-section-timetable]').forEach(btn => btn.addEventListener('click', () => this.showSectionSchedule(btn.dataset.sectionTimetable)));
     }
 
-    renderRoomOptions() {
-        const sel = document.getElementById('roomSelect');
-        const building = document.getElementById('buildingSelect')?.value || '';
+    renderRoomOptions(slot = document.querySelector('#scheduleSlots .schedule-slot')) {
+        if (!slot) return;
+        const sel = slot.querySelector('[data-field="room"]') || document.getElementById('roomSelect');
+        const value = field => slot.querySelector(`[data-field="${field}"]`)?.value || document.getElementById(field)?.value || '';
+        const building = value('building');
         const rooms = this.rooms.filter(r => !building || (this.roomDetails[r] || {}).building === building);
         sel.innerHTML = '<option value="">-- Select Room --</option>' + rooms.slice().sort((a,b)=>a.localeCompare(b)).map(r => `<option value="${r}">${r}</option>`).join('');
     }
@@ -2014,30 +2006,34 @@ class ScheduleManager {
     }
 
     // remove rooms that conflict with selected time/day
-    updateRoomOptions() {
-        const day = document.getElementById('day').value;
-        const startTime = document.getElementById('startTime').value;
-        const endTime = document.getElementById('endTime').value;
-        const sel = document.getElementById('roomSelect');
+    updateRoomOptions(slot = document.querySelector('#scheduleSlots .schedule-slot')) {
+        if (!slot) return;
+        const legacyIds = { building: 'buildingSelect', room: 'roomSelect' };
+        const value = field => slot.querySelector(`[data-field="${field}"]`)?.value || document.getElementById(legacyIds[field] || field)?.value || '';
+        const days = [...slot.querySelectorAll('input[name="days"]:checked')].map(input => input.value);
+        const startTime = value('startTime');
+        const endTime = value('endTime');
+        const sel = slot.querySelector('[data-field="room"]') || document.getElementById('roomSelect');
+        if (!sel) return;
         const previousValue = sel.value;
-        const building = document.getElementById('buildingSelect').value;
+        const building = value('building');
 
         // if no time/day selected, show all
-        if (!day || !startTime || !endTime) {
-            this.renderRoomOptions();
+        if (!days.length || !startTime || !endTime) {
+            this.renderRoomOptions(slot);
             return;
         }
 
         const available = this.rooms.filter(r => {
             // if any existing schedule uses room r at overlapping time on same day, exclude
-            return (!building || (this.roomDetails[r] || {}).building === building) && !this.schedules.some(s => s.room.toLowerCase() === r.toLowerCase() && s.day === day && this.timesOverlap(s.startTime, s.endTime, startTime, endTime));
+            return (!building || (this.roomDetails[r] || {}).building === building) && !this.schedules.some(s => s.room.toLowerCase() === r.toLowerCase() && days.includes(s.day) && this.timesOverlap(s.startTime, s.endTime, startTime, endTime));
         });
 
         // sort available rooms
         const sortedAvailable = available.slice().sort((a,b)=>a.localeCompare(b));
         sel.innerHTML = '<option value="">-- Select Room --</option>' + sortedAvailable.map(r => `<option value="${r}">${r}</option>`).join('');
         if (sortedAvailable.includes(previousValue)) sel.value = previousValue;
-        const hint = document.getElementById('roomHint');
+        const hint = slot.querySelector('.room-hint') || document.getElementById('roomHint');
         hint.textContent = available.length === 0 ? 'No rooms are available for this time.' : `${available.length} room${available.length === 1 ? '' : 's'} available for this time.`;
     }
 

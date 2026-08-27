@@ -947,6 +947,16 @@ html, body { overflow-x:hidden; }
 .schedule-form-actions .btn-add { flex:1; margin-top:0; }
 .btn-clear { border:1px solid #d0d5dd; background:#fff; color:#667085; border-radius:10px; padding:13px 18px; font-weight:700; cursor:pointer; }
 .btn-clear:hover { background:#f8fafc; color:var(--maroon); border-color:#b9c0ca; }
+.schedule-slot { border:1px solid rgba(122,11,11,.14); border-radius:10px; padding:14px; margin-bottom:12px; background:#fff; }
+.schedule-slot-heading { display:flex; justify-content:space-between; align-items:center; margin-bottom:10px; color:var(--maroon); }
+.remove-schedule-slot { border:0; background:transparent; color:#a21b1b; font-weight:700; cursor:pointer; }
+.btn-secondary { width:100%; padding:10px; border:1px dashed #a21b1b; border-radius:8px; background:#fff; color:#7a0b0b; font-weight:700; cursor:pointer; margin:2px 0 8px; }
+.btn-secondary:hover { background:#fff3f3; }
+.field-label { display:block; margin-bottom:5px; color:#333; font-weight:600; }
+.day-options { display:flex; flex-wrap:wrap; gap:7px; }
+.day-options label { display:flex; align-items:center; gap:5px; padding:8px 9px; border:1px solid #ddd; border-radius:6px; background:#fff; cursor:pointer; font-size:.9em; }
+.day-options label:has(input:checked) { border-color:#a21b1b; background:#fff0f0; color:#7a0b0b; }
+.day-options input { accent-color:#a21b1b; }
 .display-panel { padding:22px; min-width:0; }.view-toggle { width:100%; min-width:0; overflow:hidden; background:#f3f5f7; padding:4px; border-radius:10px; display:flex; gap:3px; margin-bottom:24px; }.view-toggle.main-navigation { background:#fff; margin-bottom:0; }.main-navigation + .main-content { padding-top:20px; }.view-toggle .toggle-btn { flex:1 1 0; min-width:0; border:0; box-shadow:none; background:transparent; color:var(--muted); border-radius:7px; padding:9px 8px; font-size:.82rem; }.view-toggle .toggle-btn.active { color:var(--maroon); background:white; box-shadow:0 2px 7px rgba(16,24,40,.12); }
 .section-timetable-tools { display:flex; align-items:center; gap:12px; margin:-8px 0 18px; padding:13px 15px; background:#fffaf2; border:1px solid #f0dfbf; border-radius:11px; }.section-timetable-tools > div { margin-right:auto; display:flex; flex-direction:column; gap:3px; }.section-timetable-tools strong { color:var(--ink); font-size:.88rem; }.section-timetable-tools span { color:var(--muted); font-size:.76rem; }.section-timetable-tools select { min-width:160px; padding:9px 10px; border:1px solid #d7dce4; border-radius:8px; background:#fff; }.section-timetable-tools .btn-view { margin:0; padding:9px 12px; font-size:.78rem; }
 .student-schedule-empty { border:1px dashed #d9c7a4; border-radius:12px; padding:44px 20px; text-align:center; color:var(--muted); background:#fffdf8; }
