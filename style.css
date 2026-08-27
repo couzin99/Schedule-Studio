@@ -957,6 +957,11 @@ html, body { overflow-x:hidden; }
 .day-options label { display:flex; align-items:center; gap:5px; padding:8px 9px; border:1px solid #ddd; border-radius:6px; background:#fff; cursor:pointer; font-size:.9em; }
 .day-options label:has(input:checked) { border-color:#a21b1b; background:#fff0f0; color:#7a0b0b; }
 .day-options input { accent-color:#a21b1b; }
+.schedule-search { display:block; min-width:260px; }
+.schedule-search input { width:100%; padding:10px 12px; border:1px solid #d0d5dd; border-radius:8px; background:#fff; color:#182230; font-size:.9rem; }
+.schedule-search input:focus { outline:none; border-color:#a21b1b; box-shadow:0 0 0 3px rgba(162,27,27,.12); }
+.sr-only { position:absolute; width:1px; height:1px; padding:0; margin:-1px; overflow:hidden; clip:rect(0,0,0,0); white-space:nowrap; border:0; }
+@media (max-width:560px) { .schedule-search { min-width:0; width:100%; margin-top:12px; } }
 .display-panel { padding:22px; min-width:0; }.view-toggle { width:100%; min-width:0; overflow:hidden; background:#f3f5f7; padding:4px; border-radius:10px; display:flex; gap:3px; margin-bottom:24px; }.view-toggle.main-navigation { background:#fff; margin-bottom:0; }.main-navigation + .main-content { padding-top:20px; }.view-toggle .toggle-btn { flex:1 1 0; min-width:0; border:0; box-shadow:none; background:transparent; color:var(--muted); border-radius:7px; padding:9px 8px; font-size:.82rem; }.view-toggle .toggle-btn.active { color:var(--maroon); background:white; box-shadow:0 2px 7px rgba(16,24,40,.12); }
 .section-timetable-tools { display:flex; align-items:center; gap:12px; margin:-8px 0 18px; padding:13px 15px; background:#fffaf2; border:1px solid #f0dfbf; border-radius:11px; }.section-timetable-tools > div { margin-right:auto; display:flex; flex-direction:column; gap:3px; }.section-timetable-tools strong { color:var(--ink); font-size:.88rem; }.section-timetable-tools span { color:var(--muted); font-size:.76rem; }.section-timetable-tools select { min-width:160px; padding:9px 10px; border:1px solid #d7dce4; border-radius:8px; background:#fff; }.section-timetable-tools .btn-view { margin:0; padding:9px 12px; font-size:.78rem; }
 .student-schedule-empty { border:1px dashed #d9c7a4; border-radius:12px; padding:44px 20px; text-align:center; color:var(--muted); background:#fffdf8; }

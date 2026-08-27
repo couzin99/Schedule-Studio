@@ -16,6 +16,8 @@ class ScheduleManager {
         this.ownerViewingUserId = null;
         this.ownerAllSchedules = [];
         this.ownerCatalog = {};
+        this.teacherScheduleSearch = '';
+        this.studentSectionSearch = '';
         this.pendingOwnerViewingUserId = sessionStorage.getItem('scheduleStudioOwnerUser') || null;
         this.buildings = Array.from(new Set([...this.buildings, ...Object.values(this.roomDetails).map(info => info && info.building).filter(Boolean)]));
         this.subjectColors = this.loadSubjectColors();
@@ -41,6 +43,14 @@ class ScheduleManager {
 
     setupEventListeners() {
         document.getElementById('scheduleForm').addEventListener('submit', (e) => this.handleAddSchedule(e));
+        document.getElementById('teacherScheduleSearch')?.addEventListener('input', e => {
+            this.teacherScheduleSearch = e.target.value.trim().toLowerCase();
+            this.renderAllView();
+        });
+        document.getElementById('studentSectionSearch')?.addEventListener('input', e => {
+            this.studentSectionSearch = e.target.value.trim().toLowerCase();
+            this.renderStudentsView();
+        });
         document.getElementById('clearScheduleBtn')?.addEventListener('click', () => this.clearScheduleForm());
         document.querySelectorAll('.toggle-btn').forEach(btn => {
             // view toggles already wired in HTML; keep existing behavior
@@ -609,8 +619,13 @@ class ScheduleManager {
         });
 
         const teachersSorted = Object.keys(grouped).sort((a, b) => a.localeCompare(b));
+        const filteredTeachers = teachersSorted.filter(teacherName => teacherName.toLowerCase().includes(this.teacherScheduleSearch));
+        if (!filteredTeachers.length) {
+            allSchedules.innerHTML = `<p class="empty-message">No teacher schedules match "${this.escapeHtml(this.teacherScheduleSearch)}".</p>`;
+            return;
+        }
 
-        allSchedules.innerHTML = teachersSorted.map(teacherName => {
+        allSchedules.innerHTML = filteredTeachers.map(teacherName => {
             const teacherSchedules = grouped[teacherName];
             const conflicts = this.getTeacherConflicts(teacherName);
             const hasConflict = conflicts.length > 0;
@@ -719,7 +734,12 @@ class ScheduleManager {
         }
         const dayOrder = { Monday: 1, Tuesday: 2, Wednesday: 3, Thursday: 4, Friday: 5, Saturday: 6 };
         sections.forEach(section => grouped[section].sort((a, b) => (dayOrder[a.day] || 0) - (dayOrder[b.day] || 0) || a.startTime.localeCompare(b.startTime)));
-        list.innerHTML = sections.map(section => {
+        const filteredSections = sections.filter(section => section.toLowerCase().includes(this.studentSectionSearch));
+        if (!filteredSections.length) {
+            list.innerHTML = `<p class="empty-message">No sections match "${this.escapeHtml(this.studentSectionSearch)}".</p>`;
+            return;
+        }
+        list.innerHTML = filteredSections.map(section => {
             const rows = grouped[section];
             const safeSection = section.replace(/\\/g, '\\\\').replace(/'/g, "\\'");
             return `
@@ -1015,19 +1035,28 @@ class ScheduleManager {
     async updateRemoteListName(table, oldName, newName, scheduleColumn) {
         if (!this.remoteEnabled || !this.currentUser) return true;
         const ownerScope = this.ownerViewingUserId || this.currentUser.id;
-        let listUpdate = this.supabase.from(table).update({ name: newName }).eq('name', oldName);
-        if (this.ownerViewingUserId) listUpdate = listUpdate.eq('owner_id', ownerScope);
-        const { error: listError } = await listUpdate;
+        const { data: updatedRows, error: listError } = await this.supabase
+            .from(table)
+            .update({ name: newName })
+            .ilike('name', oldName)
+            .eq('owner_id', ownerScope)
+            .select('id');
         if (listError) {
             this.showNotification('Could not save the renamed item.', 'error');
             return false;
         }
-        let scheduleUpdate = this.supabase.from('schedules').update({ [scheduleColumn]: newName }).eq(scheduleColumn, oldName);
-        if (this.ownerViewingUserId) scheduleUpdate = scheduleUpdate.eq('owner_id', ownerScope);
+        if (!updatedRows?.length) {
+            this.showNotification('Could not save the renamed item for this account.', 'error');
+            return false;
+        }
+        const scheduleUpdate = this.supabase
+            .from('schedules')
+            .update({ [scheduleColumn]: newName })
+            .ilike(scheduleColumn, oldName)
+            .eq('owner_id', ownerScope);
         const { error: scheduleError } = await scheduleUpdate;
         if (scheduleError) {
-            this.showNotification('The list changed, but related schedules could not be updated.', 'error');
-            return false;
+            this.showNotification('The list was updated, but related schedules could not be synchronized.', 'error');
         }
         return true;
     }
@@ -1983,7 +2012,8 @@ class ScheduleManager {
     renderRoomOptions(slot = document.querySelector('#scheduleSlots .schedule-slot')) {
         if (!slot) return;
         const sel = slot.querySelector('[data-field="room"]') || document.getElementById('roomSelect');
-        const value = field => slot.querySelector(`[data-field="${field}"]`)?.value || document.getElementById(field)?.value || '';
+        const legacyIds = { building: 'buildingSelect', room: 'roomSelect' };
+        const value = field => slot.querySelector(`[data-field="${field}"]`)?.value || document.getElementById(legacyIds[field] || field)?.value || '';
         const building = value('building');
         const rooms = this.rooms.filter(r => !building || (this.roomDetails[r] || {}).building === building);
         sel.innerHTML = '<option value="">-- Select Room --</option>' + rooms.slice().sort((a,b)=>a.localeCompare(b)).map(r => `<option value="${r}">${r}</option>`).join('');
