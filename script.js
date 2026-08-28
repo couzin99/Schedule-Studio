@@ -688,7 +688,14 @@ class ScheduleManager {
         const container = document.getElementById('scheduleSlots');
         if (!container) return;
         const index = container.querySelectorAll('.schedule-slot').length;
-        const days = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+        const days = [
+            ['Monday', 'M'],
+            ['Tuesday', 'T'],
+            ['Wednesday', 'W'],
+            ['Thursday', 'Th'],
+            ['Friday', 'F'],
+            ['Saturday', 'Sat']
+        ];
         const buildings = this.buildings.slice().sort((a, b) => a.localeCompare(b));
         const slot = document.createElement('div');
         slot.className = 'schedule-slot';
@@ -697,7 +704,7 @@ class ScheduleManager {
             <div class="schedule-slot-heading"><strong>Class meeting ${index + 1}</strong><button type="button" class="remove-schedule-slot" aria-label="Remove meeting">Remove</button></div>
             <div class="form-group"><label>Start Time:</label><input type="time" data-field="startTime" required></div>
             <div class="form-group"><label>End Time:</label><input type="time" data-field="endTime" required></div>
-            <div class="form-group"><span class="field-label">Days:</span><div class="day-options" role="group" aria-label="Days for class meeting ${index + 1}">${days.map(day => `<label><input type="checkbox" name="days" value="${day}">${day.slice(0, 3)}</label>`).join('')}</div></div>
+            <div class="form-group"><span class="field-label">Days:</span><div class="day-options" role="group" aria-label="Days for class meeting ${index + 1}">${days.map(([day, shortDay]) => `<label><span>${shortDay}</span><input type="checkbox" name="days" value="${day}"></label>`).join('')}</div></div>
             <div class="form-group"><label>Campus Building:</label><select data-field="building" required><option value="">-- Select Building --</option>${buildings.map(building => `<option value="${building}">${building}</option>`).join('')}</select></div>
             <div class="form-group"><label>Room:</label><select data-field="room" required><option value="">-- Select Room --</option></select><small class="room-hint">Pick a day and time to see available rooms.</small></div>`;
         container.appendChild(slot);
