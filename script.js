@@ -2113,19 +2113,24 @@ class ScheduleManager {
     // --- Account access ---
     initializeAuth() {
         this.authMode = 'signin';
+        this.authEventReceived = false;
         this.recoveryMode = window.location.hash.includes('type=recovery') || window.location.hash.includes('reset-password') || new URLSearchParams(window.location.search).has('code');
         if (!this.supabase) {
             this.setAuthMessage('Supabase is not configured yet. Add a project URL and publishable key.', 'error');
             return;
         }
+        this.supabase.auth.onAuthStateChange((event, session) => {
+            this.authEventReceived = true;
+            console.debug('Supabase auth event:', event, session ? 'session present' : 'no session');
+            if (event === 'PASSWORD_RECOVERY') this.showPasswordRecovery();
+            this.applySession(session);
+        });
         this.supabase.auth.getSession().then(({ data, error }) => {
             if (error) this.setAuthMessage(error.message, 'error');
             if (this.recoveryMode) this.showPasswordRecovery();
-            this.applySession(data && data.session);
-        });
-        this.supabase.auth.onAuthStateChange((event, session) => {
-            if (event === 'PASSWORD_RECOVERY') this.showPasswordRecovery();
-            this.applySession(session);
+            // onAuthStateChange emits INITIAL_SESSION. Do not let this slower
+            // request overwrite a newer sign-in event with an old null result.
+            if (!this.authEventReceived) this.applySession(data && data.session);
         });
     }
 
@@ -2283,10 +2288,13 @@ class ScheduleManager {
             }
             if (result.error) throw result.error;
             if (this.authMode === 'signup' && !result.data.session) {
-                this.returnToSignIn('Account created. You can now sign in.');
+                this.returnToSignIn('Account created. Check your email to confirm your account, then sign in.');
             } else if (this.authMode === 'signup') {
-                await this.supabase.auth.signOut();
-                this.returnToSignIn('Account created. You can now sign in.');
+                // Supabase may create a session immediately when email
+                // confirmation is disabled. Keep that session active instead
+                // of signing the new user out after the dashboard appears.
+                this.applySession(result.data.session);
+                this.setAuthMessage('Account created. You are now signed in.', 'success');
             } else {
                 this.setAuthMessage('Signed in successfully.', 'success');
             }
