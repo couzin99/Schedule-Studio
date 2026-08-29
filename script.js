@@ -323,7 +323,7 @@ class ScheduleManager {
             const room = value('room');
             const roomInfo = this.roomDetails[room] || {};
             const days = [...slot.querySelectorAll('input[name="days"]:checked')].map(input => input.value);
-            return days.map((day, dayIndex) => ({ id: Date.now() + index * 100 + dayIndex, ownerId: this.ownerViewingUserId || this.currentUser?.id || '', teacherName, subject, courseYear, courseCode, units: unitsVal, building: value('building') || roomInfo.building || '', overload: '', day, startTime: value('startTime'), endTime: value('endTime'), room }));
+            return days.map(day => ({ id: this.createLocalScheduleId(), ownerId: this.ownerViewingUserId || this.currentUser?.id || '', teacherName, subject, courseYear, courseCode, units: unitsVal, building: value('building') || roomInfo.building || '', overload: '', day, startTime: value('startTime'), endTime: value('endTime'), room }));
         });
         const pending = [];
         for (const schedule of schedules) {
@@ -331,18 +331,20 @@ class ScheduleManager {
             if (validationError) return this.showNotification(validationError, 'error');
             const conflictCheck = this.checkConflicts(schedule, null, pending);
             if (conflictCheck.hasConflict) {
-                const bullets = conflictCheck.conflicts.map(c => `<li><strong>${c.type}:</strong> ${c.message}</li>`).join('');
-                return this.showNotification(`⚠️ Conflict detected:<ul style="margin-top:8px">${bullets}</ul>`, 'error');
+                const details = conflictCheck.conflicts.map(c => `${c.type}: ${c.message}`).join(' ');
+                return this.showNotification(`⚠️ Conflict detected: ${details}`, 'error');
             }
             pending.push(schedule);
         }
 
         if (this.remoteEnabled) {
-            for (const schedule of schedules) {
-                const { data, error } = await this.supabase.from('schedules').insert({ owner_id: this.ownerViewingUserId || this.currentUser?.id, teacher_name: schedule.teacherName, subject: schedule.subject, course_year: schedule.courseYear, course_code: schedule.courseCode || null, units: schedule.units, building: schedule.building || null, overload: null, day: schedule.day, start_time: schedule.startTime, end_time: schedule.endTime, room: schedule.room }).select().single();
-                if (error) return this.showNotification(error.message || 'Unable to save this schedule.', 'error');
-                schedule.id = data.id;
+            const ownerId = this.ownerViewingUserId || this.currentUser?.id;
+            const rows = schedules.map(schedule => ({ owner_id: ownerId, teacher_name: schedule.teacherName, subject: schedule.subject, course_year: schedule.courseYear, course_code: schedule.courseCode || null, units: schedule.units, building: schedule.building || null, overload: null, day: schedule.day, start_time: schedule.startTime, end_time: schedule.endTime, room: schedule.room }));
+            const { data, error } = await this.supabase.from('schedules').insert(rows).select('id');
+            if (error || !data || data.length !== schedules.length) {
+                return this.showNotification(error?.message || 'Unable to save all class meetings. No local changes were made.', 'error');
             }
+            schedules.forEach((schedule, index) => { schedule.id = data[index].id; });
         }
 
         this.schedules.push(...schedules);
@@ -891,8 +893,6 @@ class ScheduleManager {
         if (related > 0) {
             const cascade = await this.openActionModal({ mode: 'confirm', title: 'Delete teacher and schedules?', message: `${name} has ${related} schedule(s). They will also be removed.`, confirmLabel: 'Delete all' });
             if (!cascade) return this.showNotification('Deletion cancelled. Remove schedules first to delete teacher.', 'error');
-            // remove schedules and teacher
-            this.schedules = this.schedules.filter(s => s.teacherName !== name);
         } else {
             if (!await this.openActionModal({ mode: 'confirm', title: 'Delete teacher?', message: `This will remove ${name}.`, confirmLabel: 'Delete' })) return;
         }
@@ -908,6 +908,7 @@ class ScheduleManager {
             const { error: teacherError } = await teacherDelete;
             if (scheduleError || teacherError) return this.showNotification((scheduleError || teacherError).message || 'Unable to delete the teacher.', 'error');
         }
+        this.schedules = this.schedules.filter(s => s.teacherName !== name);
         this.teachers = this.teachers.filter(t => t !== name);
         this.saveTeachers();
         this.saveSchedules();
@@ -943,8 +944,6 @@ class ScheduleManager {
         if (related > 0) {
             const cascade = await this.openActionModal({ mode: 'confirm', title: 'Delete room and schedules?', message: `${name} is used in ${related} schedule(s). They will also be removed.`, confirmLabel: 'Delete all' });
             if (!cascade) return this.showNotification('Deletion cancelled. Remove schedules first to delete room.', 'error');
-            // remove schedules that reference the room
-            this.schedules = this.schedules.filter(s => s.room !== name);
         } else {
             if (!await this.openActionModal({ mode: 'confirm', title: 'Delete room?', message: `This will remove ${name}.`, confirmLabel: 'Delete' })) return;
         }
@@ -960,6 +959,7 @@ class ScheduleManager {
             const { error: roomError } = await roomDelete;
             if (scheduleError || roomError) return this.showNotification((scheduleError || roomError).message || 'Unable to delete the room.', 'error');
         }
+        this.schedules = this.schedules.filter(s => s.room !== name);
         this.rooms = this.rooms.filter(r => r !== name);
         this.saveRooms();
         this.saveSchedules();
@@ -997,7 +997,6 @@ class ScheduleManager {
         if (related > 0) {
             const cascade = await this.openActionModal({ mode: 'confirm', title: 'Delete subject and schedules?', message: `${name} is used in ${related} schedule(s). They will also be removed.`, confirmLabel: 'Delete all' });
             if (!cascade) return this.showNotification('Deletion cancelled. Remove schedules first to delete subject.', 'error');
-            this.schedules = this.schedules.filter(s => s.subject !== name);
         } else {
             if (!await this.openActionModal({ mode: 'confirm', title: 'Delete subject?', message: `This will remove ${name}.`, confirmLabel: 'Delete' })) return;
         }
@@ -1013,6 +1012,7 @@ class ScheduleManager {
             const { error: subjectError } = await subjectDelete;
             if (scheduleError || subjectError) return this.showNotification((scheduleError || subjectError).message || 'Unable to delete the subject.', 'error');
         }
+        this.schedules = this.schedules.filter(s => s.subject !== name);
         this.subjects = this.subjects.filter(s => s !== name);
         this.saveSubjects();
         this.saveSchedules();
@@ -1073,7 +1073,6 @@ class ScheduleManager {
         if (related > 0) {
             const cascade = await this.openActionModal({ mode: 'confirm', title: 'Delete section and schedules?', message: `${name} is used in ${related} schedule(s). They will also be removed.`, confirmLabel: 'Delete all' });
             if (!cascade) return this.showNotification('Deletion cancelled. Remove schedules first to delete course.', 'error');
-            this.schedules = this.schedules.filter(s => s.courseYear !== name);
         } else {
             if (!await this.openActionModal({ mode: 'confirm', title: 'Delete section?', message: `This will remove ${name}.`, confirmLabel: 'Delete' })) return;
         }
@@ -1089,6 +1088,7 @@ class ScheduleManager {
             const { error: courseError } = await courseDelete;
             if (scheduleError || courseError) return this.showNotification((scheduleError || courseError).message || 'Unable to delete the section.', 'error');
         }
+        this.schedules = this.schedules.filter(s => s.courseYear !== name);
         this.courses = this.courses.filter(c => c !== name);
         this.saveCourses();
         this.saveSchedules();
@@ -1790,12 +1790,23 @@ class ScheduleManager {
         return hours * 60 + minutes;
     }
 
+    createLocalScheduleId() {
+        if (window.crypto?.randomUUID) return window.crypto.randomUUID();
+        return `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+    }
+
     showNotification(message, type) {
         const notification = document.getElementById('notification');
-        notification.innerHTML = message;
+        if (!notification) return;
+        if (this.notificationTimer) window.clearTimeout(this.notificationTimer);
+        notification.textContent = message;
         notification.className = `notification ${type}`;
         if (type === 'success') {
-            setTimeout(() => { notification.className = 'notification'; notification.innerHTML = ''; }, 3500);
+            this.notificationTimer = window.setTimeout(() => {
+                notification.className = 'notification';
+                notification.textContent = '';
+                this.notificationTimer = null;
+            }, 3500);
         }
     }
 
@@ -1814,7 +1825,16 @@ class ScheduleManager {
         this.ensureUniqueSubjectColors();
     }
     saveSchedules() { localStorage.setItem(this.storageKey('schedules'), JSON.stringify(this.schedules)); }
-    loadSchedules() { const data = localStorage.getItem(this.storageKey('schedules')); return data ? JSON.parse(data) : []; }
+    loadArray(key) {
+        try {
+            const value = JSON.parse(localStorage.getItem(this.storageKey(key)) || '[]');
+            return Array.isArray(value) ? value : [];
+        } catch (error) {
+            console.warn(`Ignoring invalid saved ${key} data.`, error);
+            return [];
+        }
+    }
+    loadSchedules() { return this.loadArray('schedules'); }
 
     // Migrate older stored schedules using `sectionYear` to `courseYear`
     migrateSchedules() {
@@ -1832,17 +1852,17 @@ class ScheduleManager {
 
     // teachers & rooms
     saveTeachers() { localStorage.setItem(this.storageKey('teachers'), JSON.stringify(this.teachers)); }
-    loadTeachers() { const d = localStorage.getItem(this.storageKey('teachers')); return d ? JSON.parse(d) : []; }
+    loadTeachers() { return this.loadArray('teachers'); }
     saveRooms() { localStorage.setItem(this.storageKey('rooms'), JSON.stringify(this.rooms)); }
-    loadRooms() { const d = localStorage.getItem(this.storageKey('rooms')); return d ? JSON.parse(d) : []; }
+    loadRooms() { return this.loadArray('rooms'); }
     saveBuildings() { localStorage.setItem(this.storageKey('buildings'), JSON.stringify(this.buildings || [])); }
-    loadBuildings() { const d = localStorage.getItem(this.storageKey('buildings')); return d ? JSON.parse(d) : []; }
+    loadBuildings() { return this.loadArray('buildings'); }
 
     // subjects & courses
     saveSubjects() { localStorage.setItem(this.storageKey('subjects'), JSON.stringify(this.subjects)); }
-    loadSubjects() { const d = localStorage.getItem(this.storageKey('subjects')); return d ? JSON.parse(d) : []; }
+    loadSubjects() { return this.loadArray('subjects'); }
     saveCourses() { localStorage.setItem(this.storageKey('courses'), JSON.stringify(this.courses)); }
-    loadCourses() { const d = localStorage.getItem(this.storageKey('courses')); return d ? JSON.parse(d) : []; }
+    loadCourses() { return this.loadArray('courses'); }
     saveListDetails(key, details) { localStorage.setItem(this.storageKey(key), JSON.stringify(details || {})); }
     loadListDetails(key) {
         try { return JSON.parse(localStorage.getItem(this.storageKey(key))) || {}; }
@@ -2082,12 +2102,14 @@ class ScheduleManager {
             if (!modal) return;
             modal.style.display = 'flex';
             const btn = document.getElementById('introDismissBtn');
+            const closeBtn = document.getElementById('introCloseBtn');
             const chk = document.getElementById('introDontShow');
             const closeFn = () => {
                 if (chk && chk.checked) localStorage.setItem('seenIntro', 'true');
                 modal.style.display = 'none';
             };
             if (btn) btn.addEventListener('click', closeFn, { once: true });
+            if (closeBtn) closeBtn.addEventListener('click', closeFn, { once: true });
             const manageBtn = document.getElementById('introManageBtn');
             if (manageBtn) manageBtn.addEventListener('click', () => {
                 closeFn();
