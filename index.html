@@ -76,6 +76,16 @@
                 <p class="panel-description"></p>
                 <form id="scheduleForm">
                     <div class="form-group">
+                        <label for="termSelect">Term:</label>
+                        <select id="termSelect" required>
+                            <option value="">-- Select Term --</option>
+                            <option value="1st semester">1st Semester</option>
+                            <option value="2nd semester">2nd Semester</option>
+                            <option value="summer">Summer</option>
+                        </select>
+                    </div>
+
+                    <div class="form-group">
                         <label for="teacherSelect">Teacher:</label>
                         <select id="teacherSelect" required>
                             <option value="">-- Select Teacher --</option>
@@ -83,17 +93,32 @@
                     </div>
 
                     <div class="form-group">
-                        <label for="subjectSelect">Subject:</label>
-                        <select id="subjectSelect" required>
-                            <option value="">-- Select Subject --</option>
+                        <label for="courseSelect">Course &amp; Year:</label>
+                        <select id="courseSelect" required>
+                            <option value="">-- Select Course &amp; Year --</option>
                         </select>
                     </div>
 
                     <div class="form-group">
-                        <label for="courseSelect">Course &amp; Year:</label>
-                        <select id="courseSelect" required>
+                        <label for="sectionInput">Section:</label>
+                        <select id="sectionInput" required>
                             <option value="">-- Select Section --</option>
+                            <option value="A">A</option>
+                            <option value="B">B</option>
+                            <option value="C">C</option>
+                            <option value="IRREGULAR">IRREGULAR</option>
                         </select>
+                    </div>
+
+                    <div class="form-group">
+                        <label for="subjectSelect">Subject:</label>
+                        <div class="subject-combobox">
+                            <input id="subjectSelect" type="search" placeholder="Search subject" autocomplete="off" role="combobox" aria-expanded="false" aria-controls="subjectOptions" required>
+                            <button id="subjectClearBtn" class="subject-clear" type="button" aria-label="Clear subject">×</button>
+                            <span class="subject-arrow" aria-hidden="true">▼</span>
+                            <div id="subjectOptions" class="subject-options" role="listbox" hidden></div>
+                        </div>
+                        <small id="subjectDetailsHint" class="room-hint">Select a term, course, and year first.</small>
                     </div>
 
                     <div id="scheduleSlots">
@@ -152,7 +177,7 @@
             <div class="display-panel">
                 <!-- Teacher View -->
                 <div id="teacherView" class="view-content active">
-                    <div class="view-heading"><div><p class="eyebrow">WORKLOAD VIEW</p><h2>TEACHER SCHEDULES</h2></div><p>Review each instructor’s teaching load.</p></div><br>
+                    <div class="view-heading"><div><p class="eyebrow">WORKLOAD VIEW</p><h2>TEACHER SCHEDULES</h2></div><div class="view-tools"><select id="teacherViewTermFilter" class="term-filter" aria-label="Filter teacher schedules by term"><option value="">All Terms</option><option value="1st semester">1st Semester</option><option value="2nd semester">2nd Semester</option><option value="summer">Summer</option></select><label class="schedule-search"><span class="sr-only">Search teacher schedules</span><input id="teacherViewSearch" type="search" placeholder="Search teacher name or surname" autocomplete="off"></label></div></div><br>
                     <div id="teacherList" class="teacher-list">
                         <p class="empty-message">No schedules yet. Add one to get started!</p>
                     </div>
@@ -160,7 +185,7 @@
 
                 <!-- All Schedules View -->
                 <div id="allView" class="view-content">
-                    <div class="view-heading"><div><p class="eyebrow">TEACHER TIMETABLE</p><h2>TEACHERS SCHEDULE</h2></div><label class="schedule-search"><span class="sr-only">Search teacher schedules</span><input id="teacherScheduleSearch" type="search" placeholder="Search teacher name or surname" autocomplete="off"></label></div><br>
+                    <div class="view-heading"><div><p class="eyebrow">TEACHER TIMETABLE</p><h2>TEACHERS SCHEDULE</h2></div><div class="view-tools"><select id="allViewTermFilter" class="term-filter" aria-label="Filter teacher schedules by term"><option value="">All Terms</option><option value="1st semester">1st Semester</option><option value="2nd semester">2nd Semester</option><option value="summer">Summer</option></select><label class="schedule-search"><span class="sr-only">Search teacher schedules</span><input id="teacherScheduleSearch" type="search" placeholder="Search teacher name or surname" autocomplete="off"></label></div></div><br>
                     <div id="allSchedules" class="all-schedules">
                         <p class="empty-message">No schedules yet. Add one to get started!</p>
                     </div>
@@ -168,7 +193,7 @@
 
                 <!-- Student Schedule View -->
                 <div id="studentsView" class="view-content">
-                    <div class="view-heading"><div><p class="eyebrow">PROGRAM TIMETABLES</p><h2>STUDENTS SCHEDULE</h2></div><label class="schedule-search"><span class="sr-only">Search student sections</span><input id="studentSectionSearch" type="search" placeholder="Search section" autocomplete="off"></label></div><br>
+                    <div class="view-heading"><div><p class="eyebrow">PROGRAM TIMETABLES</p><h2>STUDENTS SCHEDULE</h2></div><div class="view-tools"><select id="studentsViewTermFilter" class="term-filter" aria-label="Filter student schedules by term"><option value="">All Terms</option><option value="1st semester">1st Semester</option><option value="2nd semester">2nd Semester</option><option value="summer">Summer</option></select><label class="schedule-search"><span class="sr-only">Search student sections</span><input id="studentSectionSearch" type="search" placeholder="Search section" autocomplete="off"></label></div></div><br>
                     <div id="studentSectionList" class="student-section-list">
                         <p class="empty-message">No student schedules yet. Add a class to get started!</p>
                     </div>
@@ -199,6 +224,10 @@
                     <div class="view-heading"><div><p class="eyebrow">SETUP</p><h2>MANAGE YOUR LISTS</h2></div></div><br>
                     <div class="manage-sections">
                         <div class="manage-section">
+                            <div class="manage-section-heading"><div><h3>SCHOOL YEAR</h3><p>Set the school year used on generated schedule PDFs.</p></div></div>
+                            <div class="manage-add"><input type="text" id="schoolYearInput" placeholder="e.g., 2026 – 2027" maxlength="20"><button type="button" id="saveSchoolYearBtn" class="btn-action">Save school year</button></div>
+                        </div>
+                        <div class="manage-section">
                             <div class="manage-section-heading"><div><h3>TEACHERS</h3><p>Add instructors available for class assignments.</p></div></div>
                             <div class="manage-add"><input type="text" id="newTeacher" placeholder="Teacher name"><button type="button" id="addTeacherBtn" class="btn-action">Add teacher</button></div>
                             <div id="teacherListManage" class="manage-list">
@@ -213,13 +242,6 @@
                             </div>
                         </div>
                         <div class="manage-section">
-                            <div class="manage-section-heading"><div><h3>SUBJECTS</h3><p>Set the default course code and units once.</p></div></div>
-                            <div class="manage-add manage-add-subject"><input type="text" id="newSubject" placeholder="Subject name"><input type="text" id="newSubjectCode" placeholder="Course code"><input type="number" id="newSubjectUnits" min="0" value="3" aria-label="Units"><button type="button" id="addSubjectBtn" class="btn-action">Add subject</button></div>
-                            <div id="subjectListManage" class="manage-list">
-                                <p class="empty-message">No subjects added yet.</p>
-                            </div>
-                        </div>
-                        <div class="manage-section">
                             <div class="manage-section-heading"><div><h3>ROOMS</h3><p>Pair every room with its building.</p></div></div>
                             <select id="newRoomBuilding" class="manage-select" aria-label="Building for new room">
                                 <option value="">-- Select building first --</option>
@@ -227,13 +249,6 @@
                             <div class="manage-add"><input type="text" id="newRoom" placeholder="Room number"><button type="button" id="addRoomBtn" class="btn-action">Add room</button></div>
                             <div id="roomListManage" class="manage-list">
                                 <p class="empty-message">No rooms added yet.</p>
-                            </div>
-                        </div>
-                        <div class="manage-section">
-                            <div class="manage-section-heading"><div><h3>SECTIONS</h3><p>Add class sections.</p></div></div>
-                            <div class="manage-add"><input type="text" id="newCourse" placeholder="e.g., BSCE-1A"><button type="button" id="addCourseBtn" class="btn-action">Add section</button></div>
-                            <div id="courseListManage" class="manage-list">
-                                <p class="empty-message">No courses added yet.</p>
                             </div>
                         </div>
                     </div>
@@ -245,13 +260,14 @@
     <div id="ownerEditModal" class="modal hidden" aria-hidden="true">
         <div class="modal-content owner-edit-modal-content">
             <button id="ownerEditClose" class="close-modal" type="button">×</button>
-            <p class="eyebrow">OWNER EDIT</p><h2>Edit scheduled class</h2>
+                <p class="eyebrow">EDIT SCHEDULE</p><h2>Edit scheduled class</h2>
             <form id="ownerEditForm" class="owner-edit-form">
                 <input type="hidden" id="ownerEditId">
-                <label>Teacher<input id="ownerEditTeacher" required></label><label>Subject<input id="ownerEditSubject" required></label><label>Section<input id="ownerEditSection" required></label>
+                    <label>Term<select id="ownerEditTerm" required><option value="1st semester">1st Semester</option><option value="2nd semester">2nd Semester</option><option value="summer">Summer</option></select></label><label>Teacher<select id="ownerEditTeacher" required><option value="">-- Select Teacher --</option></select></label><label>Subject<select id="ownerEditSubject" required><option value="">-- Select Subject --</option></select></label><label>Section<select id="ownerEditSection" required><option value="">-- Select Section --</option><option value="A">A</option><option value="B">B</option><option value="C">C</option><option value="IRREGULAR">IRREGULAR</option></select></label>
                 <label>Day<select id="ownerEditDay" required><option>Monday</option><option>Tuesday</option><option>Wednesday</option><option>Thursday</option><option>Friday</option><option>Saturday</option></select></label>
                 <label>Start time<input id="ownerEditStart" type="time" required></label><label>End time<input id="ownerEditEnd" type="time" required></label>
-                <label>Building<input id="ownerEditBuilding"></label><label>Room<input id="ownerEditRoom" required></label>
+                <label>Building<select id="ownerEditBuilding" required><option value="">-- Select Building --</option></select></label><label>Room<select id="ownerEditRoom" required><option value="">-- Select Room --</option></select></label>
+                <p id="ownerEditMessage" class="edit-form-message" role="alert"></p>
                 <div class="schedule-form-actions"><button class="btn-add" type="submit">Save changes</button><button class="btn-clear" id="ownerEditCancel" type="button">Cancel</button></div>
             </form>
         </div>
@@ -263,6 +279,7 @@
             <h2 id="modalTeacherName">Teacher Schedule</h2>
             <div class="modal-actions">
                 <button id="viewPdfBtn" class="btn-action">View as PDF</button>
+                <button id="downloadPdfBtn" class="btn-action">Download PDF</button>
                 <button id="viewSectionOfficialModalBtn" class="btn-action hidden">Official Schedule</button>
                 <button id="viewLoadBtn" class="btn-action">Teaching Load</button>
             </div>
@@ -292,11 +309,11 @@
                 <div class="intro-icon">🎓</div>
                 <div class="intro-copy">
                     <h3 id="introTitle">Quick Setup</h3>
-                    <p class="muted">Add the core lists first so the schedule builder works smoothly. You can edit or add items later from <strong>Manage Lists</strong>.</p>
+                    <p class="muted">Add teachers, buildings, and rooms first so the schedule builder works smoothly. Curriculum subjects and course years are built in.</p>
                     <ul class="intro-steps">
                         <li><strong>Teachers</strong> — add instructors you'll schedule.</li>
-                        <li><strong>Subjects</strong> — add course subjects (e.g., Mathematics).</li>
-                        <li><strong>Course &amp; Year</strong> — add entries like <em>BSCpE-2 &amp; 2nd Year</em>.</li>
+                        <li><strong>Curriculum</strong> — choose the course year and term to load subjects automatically.</li>
+                        <li><strong>Section</strong> — choose A, B, C, or IRREGULAR when creating a schedule.</li>
                         <li><strong>Rooms</strong> — add available rooms for assignments.</li>
                     </ul>
                     <div class="intro-actions">
@@ -353,6 +370,7 @@
     })();
     </script>
 
+    <script src="curriculum-catalog.js"></script>
     <script src="script.js"></script>
 </body>
 </html>

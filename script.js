@@ -9,6 +9,7 @@ class ScheduleManager {
         this.buildings = this.loadBuildings();
         this.subjectDetails = this.loadListDetails('subjectDetails');
         this.roomDetails = this.loadListDetails('roomDetails');
+        this.schoolYear = this.loadSchoolYear();
         this.currentProfile = null;
         this.isOwner = false;
         this.ownerProfiles = [];
@@ -16,8 +17,17 @@ class ScheduleManager {
         this.ownerViewingUserId = null;
         this.ownerAllSchedules = [];
         this.ownerCatalog = {};
+        this.curriculumCatalog = Array.isArray(window.CURRICULUM_CATALOG)
+            ? window.CURRICULUM_CATALOG.map(entry => ({ ...entry, term: entry.term === '3rd term' ? 'summer' : entry.term }))
+            : [];
+        this.selectedCurriculumEntry = null;
+        this.term = '';
+        this.teacherViewSearch = '';
         this.teacherScheduleSearch = '';
         this.studentSectionSearch = '';
+        this.teacherViewTermFilter = '';
+        this.allViewTermFilter = '';
+        this.studentsViewTermFilter = '';
         this.pendingOwnerViewingUserId = sessionStorage.getItem('scheduleStudioOwnerUser') || null;
         this.buildings = Array.from(new Set([...this.buildings, ...Object.values(this.roomDetails).map(info => info && info.building).filter(Boolean)]));
         this.subjectColors = this.loadSubjectColors();
@@ -43,6 +53,53 @@ class ScheduleManager {
 
     setupEventListeners() {
         document.getElementById('scheduleForm').addEventListener('submit', (e) => this.handleAddSchedule(e));
+        document.getElementById('saveSchoolYearBtn')?.addEventListener('click', () => this.saveSchoolYearSetting());
+        document.getElementById('termSelect')?.addEventListener('change', e => {
+            this.term = e.target.value;
+            this.renderTeacherOptions();
+            this.renderCourseOptions();
+            this.renderSubjectOptions();
+            this.checkPrereqs();
+        });
+        document.getElementById('teacherSelect')?.addEventListener('change', () => {
+            this.renderCourseOptions();
+            this.checkPrereqs();
+        });
+        document.getElementById('courseSelect')?.addEventListener('change', () => {
+            this.renderSubjectOptions();
+            this.checkPrereqs();
+        });
+        document.getElementById('subjectSelect')?.addEventListener('input', () => {
+            this.renderSubjectOptions(document.getElementById('subjectSelect').value);
+            this.updateSelectedSubjectDetails();
+            this.checkPrereqs();
+        });
+        document.getElementById('subjectSelect')?.addEventListener('focus', () => this.renderSubjectOptions());
+        document.getElementById('subjectSelect')?.addEventListener('click', () => this.renderSubjectOptions());
+        document.getElementById('subjectOptions')?.addEventListener('click', e => {
+            const option = e.target.closest('[data-subject-value]');
+            if (!option) return;
+            const input = document.getElementById('subjectSelect');
+            input.value = option.dataset.subjectValue;
+            this.updateSelectedSubjectDetails();
+            this.renderSubjectOptions();
+            this.checkPrereqs();
+        });
+        document.getElementById('subjectClearBtn')?.addEventListener('click', () => {
+            const input = document.getElementById('subjectSelect');
+            input.value = '';
+            input.focus();
+            this.renderSubjectOptions();
+            this.updateSelectedSubjectDetails();
+            this.checkPrereqs();
+        });
+        document.addEventListener('click', e => {
+            if (!e.target.closest('.subject-combobox')) this.closeSubjectOptions();
+        });
+        document.getElementById('teacherViewSearch')?.addEventListener('input', e => {
+            this.teacherViewSearch = e.target.value.trim().toLowerCase();
+            this.renderTeacherView();
+        });
         document.getElementById('teacherScheduleSearch')?.addEventListener('input', e => {
             this.teacherScheduleSearch = e.target.value.trim().toLowerCase();
             this.renderAllView();
@@ -50,6 +107,12 @@ class ScheduleManager {
         document.getElementById('studentSectionSearch')?.addEventListener('input', e => {
             this.studentSectionSearch = e.target.value.trim().toLowerCase();
             this.renderStudentsView();
+        });
+        [['teacherViewTermFilter', 'teacherViewTermFilter', 'renderTeacherView'], ['allViewTermFilter', 'allViewTermFilter', 'renderAllView'], ['studentsViewTermFilter', 'studentsViewTermFilter', 'renderStudentsView']].forEach(([id, property, renderer]) => {
+            document.getElementById(id)?.addEventListener('change', e => {
+                this[property] = e.target.value;
+                this[renderer]();
+            });
         });
         document.getElementById('clearScheduleBtn')?.addEventListener('click', () => this.clearScheduleForm());
         document.querySelectorAll('.toggle-btn').forEach(btn => {
@@ -77,8 +140,10 @@ class ScheduleManager {
 
         // PDF / Print buttons in modal
         const viewPdfBtn = document.getElementById('viewPdfBtn');
+        const downloadPdfBtn = document.getElementById('downloadPdfBtn');
         const viewLoadBtn = document.getElementById('viewLoadBtn');
         if (viewPdfBtn) viewPdfBtn.addEventListener('click', () => this.viewSchedulePdf());
+        if (downloadPdfBtn) downloadPdfBtn.addEventListener('click', () => this.downloadCurrentPdf());
         if (viewLoadBtn) viewLoadBtn.addEventListener('click', () => this.viewTeacherLoadPdf());
 
         // update available rooms when day/time changes
@@ -115,7 +180,8 @@ class ScheduleManager {
         const viewSectionOfficialModalBtn = document.getElementById('viewSectionOfficialModalBtn');
         if (viewSectionOfficialModalBtn) viewSectionOfficialModalBtn.addEventListener('click', () => {
             const section = document.getElementById('teacherScheduleModal')?.dataset.section;
-            if (section) this.viewSectionOfficialPdf(section);
+            const term = document.getElementById('teacherScheduleModal')?.dataset.term || null;
+            if (section) this.viewSectionOfficialPdf(section, term);
         });
         document.getElementById('ownerClearSelection')?.addEventListener('click', () => {
             this.ownerSelectedUserId = null;
@@ -124,6 +190,7 @@ class ScheduleManager {
         document.getElementById('ownerEditClose')?.addEventListener('click', () => this.closeOwnerEdit());
         document.getElementById('ownerEditCancel')?.addEventListener('click', () => this.closeOwnerEdit());
         document.getElementById('ownerEditForm')?.addEventListener('submit', e => this.saveOwnerEdit(e));
+        document.getElementById('ownerEditBuilding')?.addEventListener('change', () => this.renderEditRoomOptions());
         document.getElementById('ownerBackToUsers')?.addEventListener('click', () => this.exitOwnerUserView());
     }
 
@@ -307,10 +374,17 @@ class ScheduleManager {
         e.preventDefault();
 
         const teacherName = document.getElementById('teacherSelect').value;
-        const subject = document.getElementById('subjectSelect').value;
-        const courseYear = document.getElementById('courseSelect').value;
-        const subjectInfo = this.subjectDetails[subject] || {};
-        const courseCode = subjectInfo.courseCode || '';
+        const term = document.getElementById('termSelect').value;
+        const subject = document.getElementById('subjectSelect').value.trim();
+        const curriculumCourseYear = document.getElementById('courseSelect').value;
+        const section = document.getElementById('sectionInput').value.trim().toUpperCase();
+        const [program, yearText] = curriculumCourseYear.split(' - ');
+        const year = Number.parseInt(yearText, 10);
+        const courseYear = `${curriculumCourseYear}${section}`;
+        const curriculumEntry = this.getSelectedCurriculumEntry();
+        if (this.curriculumCatalog.length && !curriculumEntry) return this.showNotification('Select a subject from the curriculum list.', 'error');
+        const subjectInfo = curriculumEntry || this.subjectDetails[subject] || {};
+        const courseCode = subjectInfo.code || subjectInfo.courseCode || '';
         const parsedUnits = Number.parseInt(subjectInfo.units, 10);
         const unitsVal = Number.isFinite(parsedUnits) ? parsedUnits : 3;
         const slots = [...document.querySelectorAll('#scheduleSlots .schedule-slot')];
@@ -323,8 +397,21 @@ class ScheduleManager {
             const room = value('room');
             const roomInfo = this.roomDetails[room] || {};
             const days = [...slot.querySelectorAll('input[name="days"]:checked')].map(input => input.value);
-            return days.map(day => ({ id: this.createLocalScheduleId(), ownerId: this.ownerViewingUserId || this.currentUser?.id || '', teacherName, subject, courseYear, courseCode, units: unitsVal, building: value('building') || roomInfo.building || '', overload: '', day, startTime: value('startTime'), endTime: value('endTime'), room }));
+            return days.map(day => ({ id: this.createLocalScheduleId(), ownerId: this.ownerViewingUserId || this.currentUser?.id || '', term, teacherName, program, year, section, subject: subjectInfo.name || subject, courseYear, courseCode, units: unitsVal, lecHours: subjectInfo.lecHours ?? null, labHours: subjectInfo.labHours ?? null, delivery: subjectInfo.delivery || '', building: value('building') || roomInfo.building || '', overload: '', day, startTime: value('startTime'), endTime: value('endTime'), room }));
         });
+        if (!curriculumCourseYear || !section) return this.showNotification('Select a course and enter a section.', 'error');
+        if (!/^[A-Z0-9-]+$/.test(section)) return this.showNotification('Section may only contain letters, numbers, or hyphens.', 'error');
+        const expectedWeeklyMinutes = (Number(subjectInfo.lecHours) || 0) * 60 + (Number(subjectInfo.labHours) || 0) * 60;
+        const scheduledWeeklyMinutes = schedules.reduce((total, schedule) => total + this.timeToMinutes(schedule.endTime) - this.timeToMinutes(schedule.startTime), 0);
+        if (expectedWeeklyMinutes > 0 && scheduledWeeklyMinutes !== expectedWeeklyMinutes) {
+            return this.showNotification(`${subjectInfo.name || subject} requires ${expectedWeeklyMinutes / 60} hour${expectedWeeklyMinutes === 60 ? '' : 's'} per week; your selected meetings total ${scheduledWeeklyMinutes / 60} hour${scheduledWeeklyMinutes === 60 ? '' : 's'}.`, 'error');
+        }
+        if (!this.courses.includes(courseYear)) {
+            if (!(await this.addListItemToRemote('courses', courseYear))) return;
+            this.courses.push(courseYear);
+            this.saveCourses();
+            this.renderSectionScheduleOptions();
+        }
         const pending = [];
         for (const schedule of schedules) {
             const validationError = this.validateSchedule(schedule);
@@ -339,7 +426,7 @@ class ScheduleManager {
 
         if (this.remoteEnabled) {
             const ownerId = this.ownerViewingUserId || this.currentUser?.id;
-            const rows = schedules.map(schedule => ({ owner_id: ownerId, teacher_name: schedule.teacherName, subject: schedule.subject, course_year: schedule.courseYear, course_code: schedule.courseCode || null, units: schedule.units, building: schedule.building || null, overload: null, day: schedule.day, start_time: schedule.startTime, end_time: schedule.endTime, room: schedule.room }));
+            const rows = schedules.map(schedule => ({ owner_id: ownerId, term: schedule.term, program: schedule.program, year: schedule.year, section: schedule.section, teacher_name: schedule.teacherName, subject: schedule.subject, course_year: schedule.courseYear, course_code: schedule.courseCode || null, units: schedule.units, lec_hours: schedule.lecHours, lab_hours: schedule.labHours, delivery: schedule.delivery || null, building: schedule.building || null, overload: null, day: schedule.day, start_time: schedule.startTime, end_time: schedule.endTime, room: schedule.room }));
             const { data, error } = await this.supabase.from('schedules').insert(rows).select('id');
             if (error || !data || data.length !== schedules.length) {
                 return this.showNotification(error?.message || 'Unable to save all class meetings. No local changes were made.', 'error');
@@ -352,7 +439,11 @@ class ScheduleManager {
         this.saveSchedules();
         this.showNotification(`✓ ${schedules.length} meeting${schedules.length === 1 ? '' : 's'} added successfully!`, 'success');
         document.getElementById('scheduleForm').reset();
+        this.term = '';
         this.resetScheduleSlots();
+        this.renderTeacherOptions();
+        this.renderCourseOptions();
+        this.renderSubjectOptions();
         this.render();
         this.updateRoomOptions();
     }
@@ -389,6 +480,7 @@ class ScheduleManager {
         const conflicts = [];
         for (const schedule of [...this.schedules, ...additionalSchedules]) {
             if (excludeId !== null && String(schedule.id) === String(excludeId)) continue;
+            if (!this.sameTerm(schedule.term, newSchedule.term)) continue;
             if (schedule.day !== newSchedule.day) continue;
 
             // teacher conflict
@@ -410,6 +502,18 @@ class ScheduleManager {
                         message: `${schedule.room} is already in use by ${schedule.teacherName} for ${schedule.subject} from ${this.formatTime(schedule.startTime)} to ${this.formatTime(schedule.endTime)}.`
                     });
                 }
+            }
+
+            // A subject can meet multiple times per week, but not twice at an overlapping time.
+            if (schedule.courseYear && newSchedule.courseYear &&
+                schedule.courseYear.trim().toLowerCase() === newSchedule.courseYear.trim().toLowerCase() &&
+                schedule.subject.trim().toLowerCase() === newSchedule.subject.trim().toLowerCase() &&
+                schedule.day === newSchedule.day &&
+                this.timesOverlap(schedule.startTime, schedule.endTime, newSchedule.startTime, newSchedule.endTime)) {
+                conflicts.push({
+                    type: 'Subject conflict',
+                    message: `${newSchedule.subject} is already scheduled for ${newSchedule.courseYear} on ${newSchedule.day} from ${this.formatTime(schedule.startTime)} to ${this.formatTime(schedule.endTime)}.`
+                });
             }
 
             if (schedule.courseYear && newSchedule.courseYear &&
@@ -447,12 +551,26 @@ class ScheduleManager {
         return `${displayHour}:${minutes} ${ampm}`;
     }
 
-    getTeacherSchedules(teacherName) {
-        return this.schedules.filter(s => s.teacherName.toLowerCase() === teacherName.toLowerCase());
+    getTeacherSchedules(teacherName, term = null) {
+        return this.schedules.filter(s => s.teacherName.toLowerCase() === teacherName.toLowerCase() && (term === null || (term ? this.sameTerm(s.term, term) : !s.term)));
     }
 
-    getTeacherConflicts(teacherName) {
-        const teacherSchedules = this.getTeacherSchedules(teacherName);
+    sameTerm(first, second) {
+        if (!first || !second) return !first && !second;
+        return String(first).toLowerCase() === String(second).toLowerCase();
+    }
+
+    compareTerms(first, second) {
+        const order = { '1st semester': 1, '2nd semester': 2, summer: 3, '3rd term': 3, '': 4 };
+        return (order[first] || 99) - (order[second] || 99);
+    }
+
+    formatTerm(term) {
+        return term === 'summer' ? 'Summer' : term === '1st semester' ? '1st Semester' : term === '2nd semester' ? '2nd Semester' : term === '3rd term' ? 'Summer' : 'Term not specified';
+    }
+
+    getTeacherConflicts(teacherName, term = null) {
+        const teacherSchedules = this.getTeacherSchedules(teacherName, term);
         const conflicts = [];
         for (let i = 0; i < teacherSchedules.length; i++) {
             for (let j = i + 1; j < teacherSchedules.length; j++) {
@@ -474,6 +592,7 @@ class ScheduleManager {
                 const a = this.schedules[i];
                 const b = this.schedules[j];
                 if (a.day !== b.day || !this.timesOverlap(a.startTime, a.endTime, b.startTime, b.endTime)) continue;
+                if (!this.sameTerm(a.term, b.term)) continue;
                 if (same(a.teacherName, b.teacherName)) conflicts.push({ type: 'teacher', a, b });
                 if (same(a.room, b.room)) conflicts.push({ type: 'room', a, b });
                 if (a.courseYear && b.courseYear && same(a.courseYear, b.courseYear)) conflicts.push({ type: 'section', a, b });
@@ -542,21 +661,31 @@ class ScheduleManager {
 
     renderTeacherView() {
         const teacherList = document.getElementById('teacherList');
-        const uniqueTeachers = [...new Set(this.schedules.map(s => s.teacherName))];
-        if (uniqueTeachers.length === 0) {
+        const uniqueTeachers = [...new Set(this.schedules.map(s => s.teacherName))]
+            .filter(teacherName => teacherName.toLowerCase().includes(this.teacherViewSearch));
+        if (this.schedules.length === 0) {
             teacherList.innerHTML = '<div class="welcome-state"><span class="welcome-kicker">WELCOME</span><h3>Your scheduling workspace is ready.</h3><p>Create your first class assignment using the scheduler, or open Manage Lists to set up your teachers, subjects, sections, buildings, and rooms.</p></div>';
             return;
         }
+        if (uniqueTeachers.length === 0) {
+            teacherList.innerHTML = '<p class="empty-message">No teachers match your search.</p>';
+            return;
+        }
 
-        teacherList.innerHTML = uniqueTeachers.map(teacherName => {
-            const teacherSchedules = this.getTeacherSchedules(teacherName);
-            const conflicts = this.getTeacherConflicts(teacherName);
+        teacherList.innerHTML = uniqueTeachers.flatMap(teacherName => {
+            const terms = [...new Set(this.getTeacherSchedules(teacherName).map(schedule => schedule.term || ''))]
+                .filter(term => !this.teacherViewTermFilter || term === this.teacherViewTermFilter)
+                .sort((a, b) => this.compareTerms(a, b));
+            return terms.map(term => {
+            const teacherSchedules = this.getTeacherSchedules(teacherName, term);
+            const conflicts = this.getTeacherConflicts(teacherName, term);
             const hasConflict = conflicts.length > 0;
 
             return `
                 <div class="teacher-card ${hasConflict ? 'has-conflict' : ''}">
                     <div class="teacher-name">
                         ${teacherName}
+                        <span class="term-badge">${this.formatTerm(term)}</span>
                         ${hasConflict ? '<span class="conflict-badge">⚠️ CONFLICT</span>' : ''}
                     </div>
                     ${hasConflict ? `
@@ -585,7 +714,7 @@ class ScheduleManager {
                                         <td>${schedule.day}</td>
                                         <td>${this.formatTime(schedule.startTime)} - ${this.formatTime(schedule.endTime)}</td>
                                         <td>${schedule.room}</td>
-                                        <td><button type="button" class="delete-btn" onclick="manager.deleteSchedule('${String(schedule.id).replace(/'/g, "\\'")}')">Delete</button></td>
+                                        <td><!-- <button type="button" class="edit-btn" onclick="manager.openScheduleEdit('${String(schedule.id).replace(/'/g, "\\'")}')">Edit</button> --> <button type="button" class="delete-btn" onclick="manager.deleteSchedule('${String(schedule.id).replace(/'/g, "\\'")}')">Delete</button></td>
                                     </tr>
                                 `;
                             }).join('')}
@@ -593,6 +722,7 @@ class ScheduleManager {
                     </table>
                 </div>
             `;
+            });
         }).join('');
     }
 
@@ -605,13 +735,14 @@ class ScheduleManager {
 
         const grouped = {};
         this.schedules.forEach(s => {
-            if (!grouped[s.teacherName]) grouped[s.teacherName] = [];
-            grouped[s.teacherName].push(s);
+            const key = `${s.teacherName}|||${s.term || ''}`;
+            if (!grouped[key]) grouped[key] = { teacherName: s.teacherName, term: s.term || '', schedules: [] };
+            grouped[key].schedules.push(s);
         });
 
         const dayOrder = { 'Monday': 1, 'Tuesday': 2, 'Wednesday': 3, 'Thursday': 4, 'Friday': 5, 'Saturday': 6 };
-        Object.keys(grouped).forEach(teacher => {
-            grouped[teacher].sort((a, b) => {
+        Object.values(grouped).forEach(group => {
+            group.schedules.sort((a, b) => {
                 const dayCompare = (dayOrder[a.day] || 0) - (dayOrder[b.day] || 0);
                 if (dayCompare !== 0) return dayCompare;
                 const courseCompare = a.courseYear.localeCompare(b.courseYear);
@@ -620,21 +751,22 @@ class ScheduleManager {
             });
         });
 
-        const teachersSorted = Object.keys(grouped).sort((a, b) => a.localeCompare(b));
-        const filteredTeachers = teachersSorted.filter(teacherName => teacherName.toLowerCase().includes(this.teacherScheduleSearch));
-        if (!filteredTeachers.length) {
+        const groupsSorted = Object.values(grouped).sort((a, b) => a.teacherName.localeCompare(b.teacherName) || this.compareTerms(a.term, b.term));
+        const filteredGroups = groupsSorted.filter(group => group.teacherName.toLowerCase().includes(this.teacherScheduleSearch) && (!this.allViewTermFilter || group.term === this.allViewTermFilter));
+        if (!filteredGroups.length) {
             allSchedules.innerHTML = `<p class="empty-message">No teacher schedules match "${this.escapeHtml(this.teacherScheduleSearch)}".</p>`;
             return;
         }
 
-        allSchedules.innerHTML = filteredTeachers.map(teacherName => {
-            const teacherSchedules = grouped[teacherName];
-            const conflicts = this.getTeacherConflicts(teacherName);
+        allSchedules.innerHTML = filteredGroups.map(group => {
+            const { teacherName, term, schedules: teacherSchedules } = group;
+            const conflicts = this.getTeacherConflicts(teacherName, term);
             const hasConflict = conflicts.length > 0;
             return `
                 <div class="teacher-card ${hasConflict ? 'has-conflict' : ''}">
                     <div class="teacher-name">
                         ${teacherName}
+                        <span class="term-badge">${this.formatTerm(term)}</span>
                         ${hasConflict ? '<span class="conflict-badge">⚠️ CONFLICT</span>' : ''}
                     </div>
                     ${hasConflict ? `
@@ -668,7 +800,7 @@ class ScheduleManager {
                         </tbody>
                     </table>
                     <div class="view-row">
-                        <button type="button" class="btn-view" onclick="manager.showTeacherSchedule('${teacherName.replace(/'/g, "\\'")}')">View Timetable</button>
+                        <button type="button" class="btn-view" onclick="manager.showTeacherSchedule('${teacherName.replace(/'/g, "\\'")}', '${term.replace(/'/g, "\\'")}')">View Timetable</button>
                     </div>
                 </div>
             `;
@@ -679,7 +811,11 @@ class ScheduleManager {
         const form = document.getElementById('scheduleForm');
         if (!form) return;
         form.reset();
+        this.term = '';
         this.resetScheduleSlots();
+        this.renderTeacherOptions();
+        this.renderCourseOptions();
+        this.renderSubjectOptions();
         this.renderRoomOptions();
         const hint = document.getElementById('roomHint');
         if (hint) hint.textContent = 'Pick a day and time to see available rooms.';
@@ -733,27 +869,29 @@ class ScheduleManager {
         this.schedules.forEach(schedule => {
             const section = (schedule.courseYear || '').trim();
             if (!section) return;
-            if (!grouped[section]) grouped[section] = [];
-            grouped[section].push(schedule);
+            const key = `${section}|||${schedule.term || ''}`;
+            if (!grouped[key]) grouped[key] = { section, term: schedule.term || '', schedules: [] };
+            grouped[key].schedules.push(schedule);
         });
-        const sections = Object.keys(grouped).sort((a, b) => a.localeCompare(b));
-        if (!sections.length) {
+        const groups = Object.values(grouped).sort((a, b) => a.section.localeCompare(b.section) || this.compareTerms(a.term, b.term));
+        if (!groups.length) {
             list.innerHTML = '<p class="empty-message">No student schedules yet. Add a class to get started!</p>';
             return;
         }
         const dayOrder = { Monday: 1, Tuesday: 2, Wednesday: 3, Thursday: 4, Friday: 5, Saturday: 6 };
-        sections.forEach(section => grouped[section].sort((a, b) => (dayOrder[a.day] || 0) - (dayOrder[b.day] || 0) || a.startTime.localeCompare(b.startTime)));
-        const filteredSections = sections.filter(section => section.toLowerCase().includes(this.studentSectionSearch));
-        if (!filteredSections.length) {
+        groups.forEach(group => group.schedules.sort((a, b) => (dayOrder[a.day] || 0) - (dayOrder[b.day] || 0) || a.startTime.localeCompare(b.startTime)));
+        const filteredGroups = groups.filter(group => group.section.toLowerCase().includes(this.studentSectionSearch) && (!this.studentsViewTermFilter || group.term === this.studentsViewTermFilter));
+        if (!filteredGroups.length) {
             list.innerHTML = `<p class="empty-message">No sections match "${this.escapeHtml(this.studentSectionSearch)}".</p>`;
             return;
         }
-        list.innerHTML = filteredSections.map(section => {
-            const rows = grouped[section];
+        list.innerHTML = filteredGroups.map(group => {
+            const { section, term, schedules: rows } = group;
             const safeSection = section.replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+            const safeTerm = term.replace(/\\/g, '\\\\').replace(/'/g, "\\'");
             return `
                 <div class="teacher-card student-section-card">
-                    <div class="teacher-name">${section}</div>
+                    <div class="teacher-name">${section}<span class="term-badge">${this.formatTerm(term)}</span></div>
                     <table class="schedule-table full-table">
                         <thead><tr><th>Subject</th><th>Teacher</th><th>Day</th><th>Time</th><th>Room</th></tr></thead>
                         <tbody>${rows.map(schedule => `
@@ -761,19 +899,21 @@ class ScheduleManager {
                             <td>${this.formatTime(schedule.startTime)} - ${this.formatTime(schedule.endTime)}</td><td>${schedule.room}</td></tr>
                         `).join('')}</tbody>
                     </table>
-                    <div class="student-section-actions"><button type="button" class="btn-view" onclick="manager.showSectionSchedule('${safeSection}')">View timetable</button></div>
+                    <div class="student-section-actions"><button type="button" class="btn-view" onclick="manager.showSectionSchedule('${safeSection}', '${safeTerm}')">View timetable</button></div>
                 </div>
             `;
         }).join('');
     }
 
     renderManageView() {
+        const schoolYearInput = document.getElementById('schoolYearInput');
+        if (schoolYearInput && document.activeElement !== schoolYearInput) schoolYearInput.value = this.schoolYear;
         const teacherListManage = document.getElementById('teacherListManage');
         const roomListManage = document.getElementById('roomListManage');
         const buildingListManage = document.getElementById('buildingListManage');
         const subjectListManage = document.getElementById('subjectListManage');
         const courseListManage = document.getElementById('courseListManage');
-
+            const term = document.getElementById('termSelect').value || null;
         if (this.teachers.length === 0) {
             teacherListManage.innerHTML = '<p class="empty-message">No teachers added yet.</p>';
         } else {
@@ -1243,12 +1383,43 @@ class ScheduleManager {
     }
 
     openOwnerEdit(id) {
-        if (!this.isOwner) return;
+        this.openScheduleEdit(id);
+    }
+
+    openScheduleEdit(id) {
         const schedule = this.schedules.find(s => String(s.id) === String(id));
         if (!schedule) return;
         const set = (field, value) => { const el = document.getElementById(field); if (el) el.value = value || ''; };
-        set('ownerEditId', schedule.id); set('ownerEditTeacher', schedule.teacherName); set('ownerEditSubject', schedule.subject); set('ownerEditSection', schedule.courseYear); set('ownerEditDay', schedule.day); set('ownerEditStart', schedule.startTime); set('ownerEditEnd', schedule.endTime); set('ownerEditBuilding', schedule.building); set('ownerEditRoom', schedule.room);
+        const teacherSelect = document.getElementById('ownerEditTeacher');
+        const subjectSelect = document.getElementById('ownerEditSubject');
+        if (teacherSelect) teacherSelect.innerHTML = '<option value="">-- Select Teacher --</option>' + this.teachers.slice().sort((a, b) => a.localeCompare(b)).map(teacher => `<option value="${this.escapeHtml(teacher)}">${this.escapeHtml(teacher)}</option>`).join('');
+        if (subjectSelect) subjectSelect.innerHTML = '<option value="">-- Select Subject --</option>' + this.subjects.slice().sort((a, b) => a.localeCompare(b)).map(subject => `<option value="${this.escapeHtml(subject)}">${this.escapeHtml(subject)}</option>`).join('');
+        const parsed = this.parseCourseYear(schedule.courseYear);
+        const section = schedule.section || parsed?.section || '';
+        const buildingSelect = document.getElementById('ownerEditBuilding');
+        if (buildingSelect) {
+            const buildings = [...new Set([...this.buildings, schedule.building].filter(Boolean))].sort((a, b) => a.localeCompare(b));
+            buildingSelect.innerHTML = '<option value="">-- Select Building --</option>' + buildings.map(building => `<option value="${this.escapeHtml(building)}">${this.escapeHtml(building)}</option>`).join('');
+        }
+        set('ownerEditId', schedule.id); set('ownerEditTerm', schedule.term || '1st semester'); set('ownerEditTeacher', schedule.teacherName); set('ownerEditSubject', schedule.subject); set('ownerEditSection', section); set('ownerEditDay', schedule.day); set('ownerEditStart', schedule.startTime); set('ownerEditEnd', schedule.endTime); set('ownerEditBuilding', schedule.building); this.renderEditRoomOptions(schedule.room);
+        this.showEditMessage('');
         document.getElementById('ownerEditModal')?.classList.remove('hidden');
+    }
+
+    showEditMessage(message) {
+        const element = document.getElementById('ownerEditMessage');
+        if (!element) return;
+        element.textContent = message;
+        element.classList.toggle('visible', Boolean(message));
+    }
+
+    renderEditRoomOptions(selectedRoom = document.getElementById('ownerEditRoom')?.value || '') {
+        const select = document.getElementById('ownerEditRoom');
+        if (!select) return;
+        const building = document.getElementById('ownerEditBuilding')?.value || '';
+        const rooms = this.rooms.filter(room => !building || (this.roomDetails[room] || {}).building === building).sort((a, b) => a.localeCompare(b));
+        select.innerHTML = '<option value="">-- Select Room --</option>' + rooms.map(room => `<option value="${this.escapeHtml(room)}">${this.escapeHtml(room)}</option>`).join('');
+        if (rooms.includes(selectedRoom)) select.value = selectedRoom;
     }
 
     closeOwnerEdit() { document.getElementById('ownerEditModal')?.classList.add('hidden'); }
@@ -1257,17 +1428,20 @@ class ScheduleManager {
         event.preventDefault();
         const id = document.getElementById('ownerEditId').value;
         const existing = this.schedules.find(s => String(s.id) === String(id));
-        if (!existing || !this.isOwner) return;
-        const updated = { ...existing, teacherName: document.getElementById('ownerEditTeacher').value.trim(), subject: document.getElementById('ownerEditSubject').value.trim(), courseYear: document.getElementById('ownerEditSection').value.trim(), day: document.getElementById('ownerEditDay').value, startTime: document.getElementById('ownerEditStart').value, endTime: document.getElementById('ownerEditEnd').value, building: document.getElementById('ownerEditBuilding').value.trim(), room: document.getElementById('ownerEditRoom').value.trim() };
+        if (!existing) return;
+        const selectedSection = document.getElementById('ownerEditSection').value;
+        const parsedCourse = this.parseCourseYear(existing.courseYear);
+        const courseYear = parsedCourse ? `${parsedCourse.program} - ${parsedCourse.year}${selectedSection}` : existing.courseYear;
+        const updated = { ...existing, term: document.getElementById('ownerEditTerm').value, teacherName: document.getElementById('ownerEditTeacher').value, subject: document.getElementById('ownerEditSubject').value, courseYear, program: parsedCourse?.program || existing.program, year: parsedCourse?.year || existing.year, section: selectedSection || existing.section, day: document.getElementById('ownerEditDay').value, startTime: document.getElementById('ownerEditStart').value, endTime: document.getElementById('ownerEditEnd').value, building: document.getElementById('ownerEditBuilding').value, room: document.getElementById('ownerEditRoom').value };
         const validation = this.validateSchedule(updated);
-        if (validation) return this.showNotification(validation, 'error');
+        if (validation) return this.showEditMessage(validation);
         const conflict = this.checkConflicts(updated, existing.id);
-        if (conflict.hasConflict) return this.showNotification('The edited class conflicts with another schedule.', 'error');
+        if (conflict.hasConflict) return this.showEditMessage(`The edited class conflicts with another schedule: ${conflict.conflicts.map(item => item.message).join(' ')}`);
         if (this.remoteEnabled) {
-            let updateQuery = this.supabase.from('schedules').update({ teacher_name: updated.teacherName, subject: updated.subject, course_year: updated.courseYear, day: updated.day, start_time: updated.startTime, end_time: updated.endTime, building: updated.building || null, room: updated.room }).eq('id', existing.id);
-            if (existing.ownerId) updateQuery = updateQuery.eq('owner_id', existing.ownerId);
+            let updateQuery = this.supabase.from('schedules').update({ term: updated.term, teacher_name: updated.teacherName, subject: updated.subject, course_year: updated.courseYear, day: updated.day, start_time: updated.startTime, end_time: updated.endTime, building: updated.building || null, room: updated.room }).eq('id', existing.id);
+            updateQuery = updateQuery.eq('owner_id', existing.ownerId || this.currentUser?.id);
             const { error } = await updateQuery;
-            if (error) return this.showNotification(error.message || 'Unable to update schedule.', 'error');
+            if (error) return this.showEditMessage(error.message || 'Unable to update schedule.');
         }
         Object.assign(existing, updated); this.saveSchedules(); this.closeOwnerEdit(); this.render(); this.showNotification('Schedule updated.', 'success');
     }
@@ -1276,12 +1450,15 @@ class ScheduleManager {
         return String(value ?? '').replace(/[&<>'"]/g, ch => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#39;', '"': '&quot;' }[ch]));
     }
 
-    showTeacherSchedule(teacherName) {
-        const teacherSchedules = this.getTeacherSchedules(teacherName);
+    showTeacherSchedule(teacherName, term = null) {
+        const teacherSchedules = this.getTeacherSchedules(teacherName, term);
 
         // mark modal with current teacher for use by print/export actions
         const modal = document.getElementById('teacherScheduleModal');
-        if (modal) modal.dataset.teacher = teacherName;
+        if (modal) {
+            modal.dataset.teacher = teacherName;
+            modal.dataset.term = term || '';
+        }
         if (modal) modal.dataset.section = '';
         document.getElementById('viewLoadBtn')?.classList.remove('hidden');
         document.getElementById('viewSectionOfficialModalBtn')?.classList.add('hidden');
@@ -1302,16 +1479,16 @@ class ScheduleManager {
         const slots = this.generateTimeSlots().filter(slot => this.timeToMinutes(slot.start) < displayEnd);
         const grid = this.buildScheduleGrid(teacherSchedules, daysToShow, slots, 'teacher');
 
-        document.getElementById('modalTeacherName').textContent = `${teacherName} — Plotted Schedule`;
+        document.getElementById('modalTeacherName').textContent = `${teacherName} — ${this.formatTerm(term)} — Plotted Schedule`;
         document.getElementById('scheduleGridContainer').innerHTML = grid;
         document.getElementById('teacherScheduleModal').classList.remove('hidden');
     }
 
-    showSectionSchedule(sectionName) {
-        const sectionSchedules = this.schedules.filter(s => (s.courseYear || '').toLowerCase() === sectionName.toLowerCase());
+    showSectionSchedule(sectionName, term = null) {
+        const sectionSchedules = this.schedules.filter(s => (s.courseYear || '').toLowerCase() === sectionName.toLowerCase() && (term === null || (term ? this.sameTerm(s.term, term) : !s.term)));
         if (!sectionSchedules.length) return this.showNotification('No schedules found for this section.', 'error');
         const modal = document.getElementById('teacherScheduleModal');
-        if (modal) { modal.dataset.teacher = ''; modal.dataset.section = sectionName; }
+        if (modal) { modal.dataset.teacher = ''; modal.dataset.section = sectionName; modal.dataset.term = term || ''; }
         document.getElementById('viewLoadBtn')?.classList.add('hidden');
         document.getElementById('viewSectionOfficialModalBtn')?.classList.remove('hidden');
         const allDays = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
@@ -1328,7 +1505,7 @@ class ScheduleManager {
     formatOfficialProgramSection(sectionName) {
         const original = String(sectionName || '').trim();
         const normalized = original.toUpperCase().replace(/[^A-Z0-9]/g, '');
-        const match = normalized.match(/^(BSCE|BSEE|BSME|BSCPE)(\d+)([A-Z])?$/);
+        const match = normalized.match(/^(BSCE|BSEE|BSME|BSCPE)(\d+)(IRREGULAR|[A-Z])?$/);
         if (!match) return original;
         const programs = {
             BSCE: 'BACHELOR OF SCIENCE IN CIVIL ENGINEERING',
@@ -1340,11 +1517,13 @@ class ScheduleManager {
         const year = Number.parseInt(match[2], 10);
         const yearName = ordinals[year] || `${year}TH`;
         const section = match[3] || 'A';
-        return `${programs[match[1]]} ${yearName} YEAR - SECTION ${section}`;
+        return section === 'IRREGULAR'
+            ? `${programs[match[1]]} ${yearName} YEAR - IRREGULAR`
+            : `${programs[match[1]]} ${yearName} YEAR - SECTION ${section}`;
     }
 
-    generateSectionOfficialElement(sectionName) {
-        const schedules = this.schedules.filter(s => (s.courseYear || '').toLowerCase() === sectionName.toLowerCase());
+    generateSectionOfficialElement(sectionName, term = null) {
+        const schedules = this.schedules.filter(s => (s.courseYear || '').toLowerCase() === sectionName.toLowerCase() && (term === null || (term ? this.sameTerm(s.term, term) : !s.term)));
         const latestEndMin = schedules.reduce((max, s) => Math.max(max, this.timeToMinutes(s.endTime)), 0);
         const displayEnd = Math.min(Math.max(18 * 60, latestEndMin), 21 * 60);
         const days = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
@@ -1370,7 +1549,7 @@ class ScheduleManager {
                 <img src="assets/logo.png" style="width:70px; height:70px; object-fit:contain;">
             </div>
             <div style="text-align:center; font-size:16px; font-weight:700; margin:4px 0 2px;">COLLEGE OF ENGINEERING</div>
-            <div style="text-align:center; font-size:14px; margin-bottom:8px;">FIRST SEMESTER 2026-2027</div>
+            <div style="text-align:center; font-size:14px; margin-bottom:8px;">${this.formatTerm(term).toUpperCase()} ${this.escapeHtml(this.schoolYear)}</div>
             <div class="section-official-title-row">
                 <div class="section-official-title">${this.escapeHtml(officialSectionName)}</div>
                 <!-- Class Adviser temporarily omitted until adviser management is implemented. -->
@@ -1385,16 +1564,44 @@ class ScheduleManager {
         return container;
     }
 
-    viewSectionOfficialPdf(sectionName) {
-        const schedules = this.schedules.filter(s => (s.courseYear || '').toLowerCase() === sectionName.toLowerCase());
+    viewSectionOfficialPdf(sectionName, term = null) {
+        const schedules = this.schedules.filter(s => (s.courseYear || '').toLowerCase() === sectionName.toLowerCase() && (term === null || (term ? this.sameTerm(s.term, term) : !s.term)));
         if (!schedules.length) return this.showNotification('No schedules found for this section.', 'error');
-        const element = this.generateSectionOfficialElement(sectionName);
+        const element = this.generateSectionOfficialElement(sectionName, term);
         document.body.appendChild(element);
         this.createPdfFromElement(element, { orientation: 'landscape', format: 'a4' }).then(pdf => {
             const url = URL.createObjectURL(pdf.output('blob'));
             const win = window.open(url, '_blank');
             if (!win) this.showNotification('Popup blocked. Please allow popups.', 'error');
         }).catch(error => this.showNotification('Failed to generate official PDF: ' + error.message, 'error'))
+          .finally(() => { if (element.parentNode) element.parentNode.removeChild(element); });
+    }
+
+    pdfFilename(value) {
+        return String(value || 'schedule').replace(/[^a-z0-9]+/gi, '-').replace(/^-|-$/g, '').toLowerCase() + '.pdf';
+    }
+
+    downloadCurrentPdf() {
+        const modal = document.getElementById('teacherScheduleModal');
+        const section = modal?.dataset?.section || '';
+        const teacher = modal?.dataset?.teacher || '';
+        const term = modal?.dataset?.term || null;
+        const element = section ? this.generateSectionOfficialElement(section, term) : document.getElementById('scheduleGridContainer')?.cloneNode(true);
+        if (!element) return this.showNotification('Schedule not available to download.', 'error');
+        if (!section) {
+            element.style.background = '#fff';
+            element.style.padding = '16px';
+            const heading = document.createElement('div');
+            heading.style.cssText = 'text-align:center; color:#111; font-family:Arial, Helvetica, sans-serif; font-size:18px; font-weight:700; margin-bottom:16px;';
+            heading.textContent = teacher ? `${teacher} - ${this.formatTerm(term)} Schedule` : 'Teacher Schedule';
+            element.prepend(heading);
+        }
+        document.body.appendChild(element);
+        this.createPdfFromElement(element, section ? { orientation: 'landscape', format: 'a4' } : {}).then(pdf => {
+            const label = section ? `${section}-${this.formatTerm(term)}-${this.schoolYear}-student-schedule` : `${teacher}-${this.formatTerm(term)}-${this.schoolYear}-teacher-schedule`;
+            pdf.save(this.pdfFilename(label));
+            this.showNotification('PDF downloaded.', 'success');
+        }).catch(error => this.showNotification('Failed to download PDF: ' + error.message, 'error'))
           .finally(() => { if (element.parentNode) element.parentNode.removeChild(element); });
     }
 
@@ -1554,7 +1761,19 @@ class ScheduleManager {
     viewSchedulePdf() {
         const container = document.getElementById('scheduleGridContainer');
         if (!container) return this.showNotification('Schedule not available to export.', 'error');
-        this.createPdfFromElement(container).then(pdf => {
+        const modal = document.getElementById('teacherScheduleModal');
+        const teacher = modal?.dataset?.teacher || '';
+        const term = modal?.dataset?.term || null;
+        const exportContainer = container.cloneNode(true);
+        exportContainer.style.background = '#fff';
+        exportContainer.style.padding = '16px';
+        exportContainer.style.width = `${container.scrollWidth || 1000}px`;
+        const heading = document.createElement('div');
+        heading.style.cssText = 'text-align:center; color:#111; font-family:Arial, Helvetica, sans-serif; font-size:18px; font-weight:700; margin-bottom:16px;';
+        heading.textContent = teacher ? `${teacher} - ${this.formatTerm(term)} Schedule` : 'Teacher Schedule';
+        exportContainer.prepend(heading);
+        document.body.appendChild(exportContainer);
+        this.createPdfFromElement(exportContainer).then(pdf => {
             try {
                 const blob = pdf.output('blob');
                 const url = URL.createObjectURL(blob);
@@ -1564,8 +1783,13 @@ class ScheduleManager {
                 }
             } catch (err) {
                 this.showNotification('Failed to open PDF: ' + err.message, 'error');
+            } finally {
+                exportContainer.remove();
             }
-        }).catch(err => this.showNotification('Failed to generate PDF: ' + err.message, 'error'));
+        }).catch(err => {
+            exportContainer.remove();
+            this.showNotification('Failed to generate PDF: ' + err.message, 'error');
+        });
     }
 
     // Generate PDF and trigger print dialog
@@ -1586,14 +1810,18 @@ class ScheduleManager {
     }
 
     // Build a standalone element representing the teacher's load (landscape A4 style)
-    generateTeacherLoadElement(teacherName) {
-        const schedules = this.getTeacherSchedules(teacherName).slice().sort((a,b) => {
+    generateTeacherLoadElement(teacherName, term = null) {
+        const schedules = this.getTeacherSchedules(teacherName, term).slice().sort((a,b) => {
             const dayOrder = { 'Monday':1,'Tuesday':2,'Wednesday':3,'Thursday':4,'Friday':5,'Saturday':6 };
             const d = (dayOrder[a.day] || 0) - (dayOrder[b.day] || 0);
             if (d !== 0) return d;
             if (a.startTime !== b.startTime) return a.startTime.localeCompare(b.startTime);
             return a.courseYear.localeCompare(b.courseYear);
         });
+        const termLabel = term === '1st semester' ? '1<sup>st</sup> Semester'
+            : term === '2nd semester' ? '2<sup>nd</sup> Semester'
+                : term === 'summer' ? 'Summer'
+                    : 'Term Not Specified';
 
         const container = document.createElement('div');
         container.className = 'teacher-load-pdf';
@@ -1623,7 +1851,7 @@ class ScheduleManager {
             <div style="text-align:center; margin-bottom:18px; color:#000; line-height:1.18;">
                 <div style="font-size:14px; font-weight:700;">COLLEGE OF ENGINEERING</div>
                 <div style="font-size:14px; font-weight:700;">INSTRUCTOR'S LOAD</div>
-                <div style="font-size:12px; font-weight:700; margin-top:3px;">School Year: 2026 – 2027 (1<sup>st</sup> Semester)</div>
+                <div style="font-size:12px; font-weight:700; margin-top:3px;">School Year: ${this.escapeHtml(this.schoolYear)} (${termLabel})</div>
             </div>
         `;
 
@@ -1741,8 +1969,9 @@ class ScheduleManager {
     viewTeacherLoadPdf() {
         const modal = document.getElementById('teacherScheduleModal');
         const teacher = modal && modal.dataset ? modal.dataset.teacher : null;
+        const term = modal && modal.dataset ? modal.dataset.term || null : null;
         if (!teacher) return this.showNotification('No teacher selected to export.', 'error');
-        const el = this.generateTeacherLoadElement(teacher);
+        const el = this.generateTeacherLoadElement(teacher, term);
         document.body.appendChild(el);
         this.createPdfFromElement(el, { orientation: 'landscape', format: 'a4' }).then(pdf => {
             try {
@@ -1765,8 +1994,9 @@ class ScheduleManager {
     printTeacherLoad() {
         const modal = document.getElementById('teacherScheduleModal');
         const teacher = modal && modal.dataset ? modal.dataset.teacher : null;
+        const term = modal && modal.dataset ? modal.dataset.term || null : null;
         if (!teacher) return this.showNotification('No teacher selected to print.', 'error');
-        const el = this.generateTeacherLoadElement(teacher);
+        const el = this.generateTeacherLoadElement(teacher, term);
         document.body.appendChild(el);
         this.createPdfFromElement(el, { orientation: 'landscape', format: 'a4' }).then(pdf => {
             try {
@@ -1845,9 +2075,25 @@ class ScheduleManager {
                 delete s.sectionYear;
                 changed = true;
             }
+            const parsed = this.parseCourseYear(s.courseYear);
+            if (parsed && (!s.program || !s.year || !s.section)) {
+                Object.assign(s, parsed);
+                changed = true;
+            }
             return s;
         });
         if (changed) this.saveSchedules();
+    }
+
+    parseCourseYear(value) {
+        const normalized = String(value || '').trim().toUpperCase().replace(/[^A-Z0-9]/g, '');
+        const match = normalized.match(/^(BSCE|BSEE|BSME|BSCPE)(\d+)(IRREGULAR|[A-Z])$/);
+        return match ? { program: match[1] === 'BSCPE' ? 'BSCpE' : match[1], year: Number.parseInt(match[2], 10), section: match[3] } : null;
+    }
+
+    getCourseYear(schedule) {
+        if (schedule.program && schedule.year && schedule.section) return `${schedule.program} - ${schedule.year}${schedule.section}`;
+        return schedule.courseYear || '';
     }
 
     // teachers & rooms
@@ -1867,6 +2113,15 @@ class ScheduleManager {
     loadListDetails(key) {
         try { return JSON.parse(localStorage.getItem(this.storageKey(key))) || {}; }
         catch (e) { return {}; }
+    }
+    loadSchoolYear() { return localStorage.getItem(this.storageKey('schoolYear')) || '2026 – 2027'; }
+    saveSchoolYearSetting() {
+        const input = document.getElementById('schoolYearInput');
+        const value = input?.value.trim();
+        if (!value) return this.showNotification('Enter a school year first.', 'error');
+        this.schoolYear = value;
+        localStorage.setItem(this.storageKey('schoolYear'), value);
+        this.showNotification('School year saved.', 'success');
     }
     saveSubjectColors() { localStorage.setItem(this.storageKey('subjectColors'), JSON.stringify(this.subjectColors || {})); }
     loadSubjectColors() {
@@ -1998,19 +2253,81 @@ class ScheduleManager {
 
     renderTeacherOptions() {
         const sel = document.getElementById('teacherSelect');
+        sel.disabled = !this.term;
         sel.innerHTML = '<option value="">-- Select Teacher --</option>' + this.teachers.slice().sort((a,b)=>a.localeCompare(b)).map(t => `<option value="${t}">${t}</option>`).join('');
     }
 
-    renderSubjectOptions() {
-        const sel = document.getElementById('subjectSelect');
-        if (!sel) return;
-        sel.innerHTML = '<option value="">-- Select Subject --</option>' + this.subjects.slice().sort((a,b)=>a.localeCompare(b)).map(s => `<option value="${s}">${s}</option>`).join('');
+    renderSubjectOptions(query = '') {
+        const input = document.getElementById('subjectSelect');
+        const list = document.getElementById('subjectOptions');
+        if (!input || !list) return;
+        input.disabled = !this.term || !document.getElementById('courseSelect')?.value;
+        const previous = input.value;
+        const entries = this.getCurriculumEntries();
+        const normalizedQuery = query.trim().toLowerCase();
+        const visibleEntries = entries.filter(entry => !normalizedQuery || `${entry.name} ${entry.code}`.toLowerCase().includes(normalizedQuery));
+        list.innerHTML = visibleEntries.length
+            ? visibleEntries.map(entry => `<button type="button" class="subject-option" role="option" data-subject-value="${this.escapeHtml(entry.name)}"><strong>${this.escapeHtml(entry.name)}</strong><span>${this.escapeHtml(entry.code)} · ${this.escapeHtml(entry.delivery || 'Class')}</span></button>`).join('')
+            : '<div class="subject-options-empty">No matching subjects</div>';
+        if (entries.some(entry => entry.name === previous)) input.value = previous;
+        else input.value = '';
+        if (document.activeElement === input) this.openSubjectOptions();
+        this.updateSelectedSubjectDetails();
+    }
+
+    openSubjectOptions() {
+        const input = document.getElementById('subjectSelect');
+        const list = document.getElementById('subjectOptions');
+        if (!input || !list || input.disabled) return;
+        list.hidden = false;
+        input.setAttribute('aria-expanded', 'true');
+    }
+
+    closeSubjectOptions() {
+        const input = document.getElementById('subjectSelect');
+        const list = document.getElementById('subjectOptions');
+        if (!input || !list) return;
+        list.hidden = true;
+        input.setAttribute('aria-expanded', 'false');
     }
 
     renderCourseOptions() {
         const sel = document.getElementById('courseSelect');
         if (!sel) return;
-        sel.innerHTML = '<option value="">-- Select Section --</option>' + this.courses.slice().sort((a,b)=>a.localeCompare(b)).map(c => `<option value="${c}">${c}</option>`).join('');
+        const previous = sel.value;
+        const courses = [...new Set(this.curriculumCatalog
+            .filter(entry => !this.term || entry.term === this.term)
+            .map(entry => `${entry.program} - ${entry.year}`))].sort((a, b) => a.localeCompare(b));
+        const options = courses.length ? courses : this.courses.slice().sort((a,b)=>a.localeCompare(b));
+        sel.disabled = !this.term || !document.getElementById('teacherSelect')?.value;
+        sel.innerHTML = '<option value="">-- Select Course & Year --</option>' + options.map(c => `<option value="${this.escapeHtml(c)}">${this.escapeHtml(c)}</option>`).join('');
+        if (options.includes(previous)) sel.value = previous;
+    }
+
+    getCurriculumEntries() {
+        const course = document.getElementById('courseSelect')?.value || '';
+        const [program, year] = course.split(' - ');
+        return this.curriculumCatalog
+            .filter(entry => (!this.term || entry.term === this.term) && (!program || entry.program === program) && (!year || String(entry.year) === year))
+            .sort((a, b) => a.name.localeCompare(b.name));
+    }
+
+    getSelectedCurriculumEntry() {
+        const subject = document.getElementById('subjectSelect')?.value.trim() || '';
+        return this.getCurriculumEntries().find(entry => entry.name === subject) || null;
+    }
+
+    updateSelectedSubjectDetails() {
+        const entry = this.getSelectedCurriculumEntry();
+        this.selectedCurriculumEntry = entry;
+        const hint = document.getElementById('subjectDetailsHint');
+        if (hint) hint.textContent = entry
+            ? `${entry.code} · ${entry.delivery || 'Class'} · ${entry.units} unit${entry.units === 1 ? '' : 's'} · ${entry.lecHours} lec / ${entry.labHours} lab hour${entry.labHours === 1 ? '' : 's'}`
+            : 'Select a subject from the filtered curriculum list.';
+    }
+
+    escapeHtml(value) {
+        return String(value ?? '').replace(/[&<>"']/g, character => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[character]));
     }
 
     renderSectionScheduleOptions() {
@@ -2125,10 +2442,12 @@ class ScheduleManager {
     // Enable or disable the schedule form submit depending on whether prerequisite lists exist
     checkPrereqs() {
         const btn = document.querySelector('#scheduleForm .btn-add');
-        const ok = this.teachers.length > 0 && this.subjects.length > 0 && this.courses.length > 0 && this.rooms.length > 0;
+        const selected = ['termSelect', 'teacherSelect', 'courseSelect', 'sectionInput', 'subjectSelect'].every(id => document.getElementById(id)?.value.trim());
+        const catalogReady = !this.curriculumCatalog.length || Boolean(this.getSelectedCurriculumEntry());
+        const ok = this.teachers.length > 0 && this.rooms.length > 0 && selected && catalogReady;
         if (btn) {
             btn.disabled = !ok;
-            btn.title = ok ? '' : 'Please add teachers, subjects, courses & rooms before plotting schedules.';
+            btn.title = ok ? '' : 'Select a term, teacher, course, subject, day, time, and room before plotting a schedule.';
         }
     }
 
@@ -2413,17 +2732,24 @@ class ScheduleManager {
             }
             const { data: scheduleRows, error: scheduleError } = await this.supabase
                 .from('schedules')
-                .select('id,owner_id,teacher_name,subject,course_year,course_code,units,building,overload,day,start_time,end_time,room')
+                .select('id,owner_id,term,program,year,section,teacher_name,subject,course_year,course_code,units,lec_hours,lab_hours,delivery,building,overload,day,start_time,end_time,room')
                 .order('created_at', { ascending: true });
             if (scheduleError) throw scheduleError;
             this.schedules = (scheduleRows || []).map(row => ({
                 id: row.id,
                 ownerId: row.owner_id || this.currentUser?.id || '',
+                term: String(row.term || '').toLowerCase(),
+                program: row.program || this.parseCourseYear(row.course_year)?.program || '',
+                year: row.year || this.parseCourseYear(row.course_year)?.year || null,
+                section: row.section || this.parseCourseYear(row.course_year)?.section || '',
                 teacherName: String(row.teacher_name || '').toUpperCase(),
                 subject: String(row.subject || '').toUpperCase(),
                 courseYear: String(row.course_year || '').toUpperCase(),
                 courseCode: String(row.course_code || '').toUpperCase(),
                 units: row.units,
+                lecHours: row.lec_hours,
+                labHours: row.lab_hours,
+                delivery: String(row.delivery || ''),
                 building: String(row.building || '').toUpperCase(),
                 overload: row.overload || '',
                 day: row.day,
