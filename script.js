@@ -401,7 +401,11 @@ class ScheduleManager {
         });
         if (!curriculumCourseYear || !section) return this.showNotification('Select a course and enter a section.', 'error');
         if (!/^[A-Z0-9-]+$/.test(section)) return this.showNotification('Section may only contain letters, numbers, or hyphens.', 'error');
-        const expectedWeeklyMinutes = (Number(subjectInfo.lecHours) || 0) * 60 + (Number(subjectInfo.labHours) || 0) * 60;
+        const lecHours = Number(subjectInfo.lecHours) || 0;
+        const labHours = Number(subjectInfo.labHours) || 0;
+        // Lecture: 1 curriculum hour = 1 actual scheduled hour.
+        // Laboratory: 1 lab unit/hour entry = 3 actual scheduled hours.
+        const expectedWeeklyMinutes = (lecHours * 60) + (labHours * 3 * 60);
         const scheduledWeeklyMinutes = schedules.reduce((total, schedule) => total + this.timeToMinutes(schedule.endTime) - this.timeToMinutes(schedule.startTime), 0);
         if (expectedWeeklyMinutes > 0 && scheduledWeeklyMinutes !== expectedWeeklyMinutes) {
             return this.showNotification(`${subjectInfo.name || subject} requires ${expectedWeeklyMinutes / 60} hour${expectedWeeklyMinutes === 60 ? '' : 's'} per week; your selected meetings total ${scheduledWeeklyMinutes / 60} hour${scheduledWeeklyMinutes === 60 ? '' : 's'}.`, 'error');
@@ -1325,7 +1329,12 @@ class ScheduleManager {
     async loadOwnerCatalog(ownerId) {
         if (this.remoteEnabled && this.supabase && ownerId) {
             const fresh = { teachers: [], subjects: [], rooms: [], courses: [] };
-            const columns = { teachers: 'id,owner_id,name', subjects: 'id,owner_id,name,course_code,units', rooms: 'id,owner_id,name,building', courses: 'id,owner_id,name' };
+            const columns = {
+                teachers: 'id,owner_id,name',
+                subjects: 'id,owner_id,name,course_code,units,lec_hours,lab_hours,delivery',
+                rooms: 'id,owner_id,name,building',
+                courses: 'id,owner_id,name'
+            };
             for (const table of Object.keys(fresh)) {
                 const { data, error } = await this.supabase.from(table).select(columns[table]).eq('owner_id', ownerId).order('name', { ascending: true });
                 if (!error && Array.isArray(data)) fresh[table] = data;
@@ -1339,7 +1348,16 @@ class ScheduleManager {
         this.courses = catalog.courses.map(row => String(row.name || '').toUpperCase()).filter(Boolean);
         this.rooms = catalog.rooms.map(row => String(row.name || '').toUpperCase()).filter(Boolean);
         this.subjectDetails = {};
-        catalog.subjects.forEach(row => { const name = String(row.name || '').toUpperCase(); this.subjectDetails[name] = { courseCode: String(row.course_code || '').toUpperCase(), units: row.units ?? 3 }; });
+        catalog.subjects.forEach(row => {
+            const name = String(row.name || '').toUpperCase();
+            this.subjectDetails[name] = {
+                courseCode: String(row.course_code || '').toUpperCase(),
+                units: Number(row.units) || 0,
+                lecHours: Number(row.lec_hours) || 0,
+                labHours: Number(row.lab_hours) || 0,
+                delivery: String(row.delivery || '').toLowerCase()
+            };
+        });
         this.roomDetails = {};
         catalog.rooms.forEach(row => { this.roomDetails[String(row.name || '').toUpperCase()] = { building: String(row.building || '').toUpperCase() }; });
         this.buildings = Array.from(new Set(catalog.rooms.map(row => String(row.building || '').toUpperCase()).filter(Boolean)));
@@ -2702,7 +2720,7 @@ class ScheduleManager {
             // fetch simple lists: subjects, teachers, rooms, courses
             const tables = ['subjects','teachers','rooms','courses'];
             for (const t of tables) {
-                const columns = t === 'subjects' ? 'id,owner_id,name,course_code,units' : t === 'rooms' ? 'id,owner_id,name,building' : 'id,owner_id,name';
+                const columns = t === 'subjects' ? 'id,owner_id,name,course_code,units,lec_hours,lab_hours,delivery' : t === 'rooms' ? 'id,owner_id,name,building' : 'id,owner_id,name';
                 const { data, error } = await this.supabase.from(t).select(columns).order('name', { ascending: true });
                 if (error) {
                     console.warn('Supabase read error for', t, error.message || error);
@@ -2717,7 +2735,15 @@ class ScheduleManager {
                 const names = data.map(r => String(r.name || '').toUpperCase()).filter(Boolean);
                 if (t === 'subjects') {
                     this.subjects = names;
-                    data.forEach(row => { this.subjectDetails[String(row.name || '').toUpperCase()] = { courseCode: String(row.course_code || '').toUpperCase(), units: row.units ?? 3 }; });
+                    data.forEach(row => {
+                    this.subjectDetails[String(row.name || '').toUpperCase()] = {
+                        courseCode: String(row.course_code || '').toUpperCase(),
+                        units: Number(row.units) || 0,
+                        lecHours: Number(row.lec_hours) || 0,
+                        labHours: Number(row.lab_hours) || 0,
+                        delivery: String(row.delivery || '').toLowerCase()
+                    };
+                });
                     this.saveSubjects(); this.saveListDetails('subjectDetails', this.subjectDetails); this.ensureUniqueSubjectColors();
                 }
                 if (t === 'teachers') { this.teachers = names; this.saveTeachers(); }
