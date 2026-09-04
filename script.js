@@ -122,13 +122,45 @@ class ScheduleManager {
             });
         });
 
+        // Add Teacher
         document.getElementById('addTeacherBtn').addEventListener('click', () => this.handleAddTeacher());
-        document.getElementById('addRoomBtn').addEventListener('click', () => this.handleAddRoom());
-        document.getElementById('addScheduleSlotBtn')?.addEventListener('click', () => this.addScheduleSlot());
-        document.getElementById('scheduleSlots')?.addEventListener('change', e => {
-            if (e.target.matches('.schedule-slot select, .schedule-slot input')) this.updateRoomOptions(e.target.closest('.schedule-slot'));
+
+        document.getElementById('newTeacher').addEventListener('keydown', e => {
+            if (e.key === 'Enter') {
+                e.preventDefault();
+                this.handleAddTeacher();
+            }
         });
+
+        // Add Room
+        document.getElementById('addRoomBtn').addEventListener('click', () => this.handleAddRoom());
+
+        document.getElementById('newRoom').addEventListener('keydown', e => {
+            if (e.key === 'Enter') {
+                e.preventDefault();
+                this.handleAddRoom();
+            }
+        });
+
+        // Add Schedule Slot
+        document.getElementById('addScheduleSlotBtn')?.addEventListener('click', () => this.addScheduleSlot());
+
+        document.getElementById('scheduleSlots')?.addEventListener('change', e => {
+            if (e.target.matches('.schedule-slot select, .schedule-slot input')) {
+                this.updateRoomOptions(e.target.closest('.schedule-slot'));
+            }
+        });
+
+        // Add Building
         document.getElementById('addBuildingBtn').addEventListener('click', () => this.handleAddBuilding());
+
+        document.getElementById('newBuilding').addEventListener('keydown', e => {
+            if (e.key === 'Enter') {
+                e.preventDefault();
+                this.handleAddBuilding();
+            }
+        });
+        
         const addSubjectBtn = document.getElementById('addSubjectBtn');
         if (addSubjectBtn) addSubjectBtn.addEventListener('click', () => this.handleAddSubject());
         const addCourseBtn = document.getElementById('addCourseBtn');
