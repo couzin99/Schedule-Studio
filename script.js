@@ -25,9 +25,11 @@ class ScheduleManager {
         this.teacherViewSearch = '';
         this.teacherScheduleSearch = '';
         this.studentSectionSearch = '';
+        this.roomAssignmentSearch = '';
         this.teacherViewTermFilter = '';
         this.allViewTermFilter = '';
         this.studentsViewTermFilter = '';
+        this.roomsViewTermFilter = '';
         this.pendingOwnerViewingUserId = sessionStorage.getItem('scheduleStudioOwnerUser') || null;
         this.buildings = Array.from(new Set([...this.buildings, ...Object.values(this.roomDetails).map(info => info && info.building).filter(Boolean)]));
         this.subjectColors = this.loadSubjectColors();
@@ -108,7 +110,11 @@ class ScheduleManager {
             this.studentSectionSearch = e.target.value.trim().toLowerCase();
             this.renderStudentsView();
         });
-        [['teacherViewTermFilter', 'teacherViewTermFilter', 'renderTeacherView'], ['allViewTermFilter', 'allViewTermFilter', 'renderAllView'], ['studentsViewTermFilter', 'studentsViewTermFilter', 'renderStudentsView']].forEach(([id, property, renderer]) => {
+        document.getElementById('roomAssignmentSearch')?.addEventListener('input', e => {
+            this.roomAssignmentSearch = e.target.value.trim().toLowerCase();
+            this.renderRoomAssignmentsView();
+        });
+        [['teacherViewTermFilter', 'teacherViewTermFilter', 'renderTeacherView'], ['allViewTermFilter', 'allViewTermFilter', 'renderAllView'], ['studentsViewTermFilter', 'studentsViewTermFilter', 'renderStudentsView'], ['roomsViewTermFilter', 'roomsViewTermFilter', 'renderRoomAssignmentsView']].forEach(([id, property, renderer]) => {
             document.getElementById(id)?.addEventListener('change', e => {
                 this[property] = e.target.value;
                 this[renderer]();
@@ -659,6 +665,7 @@ class ScheduleManager {
         this.renderTeacherView();
         this.renderAllView();
         this.renderStudentsView();
+        this.renderRoomAssignmentsView();
         this.renderManageView();
         this.renderOwnerView();
     }
@@ -938,6 +945,38 @@ class ScheduleManager {
                     <div class="student-section-actions"><button type="button" class="btn-view" onclick="manager.showSectionSchedule('${safeSection}', '${safeTerm}')">View timetable</button></div>
                 </div>
             `;
+        }).join('');
+    }
+
+    renderRoomAssignmentsView() {
+        const list = document.getElementById('roomAssignmentList');
+        if (!list) return;
+        const grouped = {};
+        this.schedules.forEach(schedule => {
+            const room = (schedule.room || '').trim();
+            if (!room) return;
+            const key = `${room}|||${schedule.term || ''}`;
+            if (!grouped[key]) grouped[key] = { room, term: schedule.term || '', schedules: [] };
+            grouped[key].schedules.push(schedule);
+        });
+        const dayOrder = { Monday: 1, Tuesday: 2, Wednesday: 3, Thursday: 4, Friday: 5, Saturday: 6 };
+        const groups = Object.values(grouped).sort((a, b) => a.room.localeCompare(b.room) || this.compareTerms(a.term, b.term));
+        groups.forEach(group => group.schedules.sort((a, b) => (dayOrder[a.day] || 0) - (dayOrder[b.day] || 0) || a.startTime.localeCompare(b.startTime)));
+        const filteredGroups = groups.filter(group => group.room.toLowerCase().includes(this.roomAssignmentSearch) && (!this.roomsViewTermFilter || group.term === this.roomsViewTermFilter));
+        if (!filteredGroups.length) {
+            const message = this.schedules.length ? `No room assignments match "${this.escapeHtml(this.roomAssignmentSearch)}".` : 'No room assignments yet. Add a class to get started!';
+            list.innerHTML = `<p class="empty-message">${message}</p>`;
+            return;
+        }
+        list.innerHTML = filteredGroups.map(group => {
+            const safeRoom = group.room.replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+            const safeTerm = group.term.replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+            return `<div class="teacher-card room-assignment-card">
+                <div class="teacher-name">${this.escapeHtml(group.room)}<span class="term-badge">${this.formatTerm(group.term)}</span></div>
+                <table class="schedule-table full-table"><thead><tr><th>Subject</th><th>Course &amp; Year</th><th>Teacher</th><th>Day</th><th>Time</th></tr></thead>
+                <tbody>${group.schedules.map(schedule => `<tr><td>${this.escapeHtml(schedule.subject)}</td><td>${this.escapeHtml(schedule.courseYear)}</td><td>${this.escapeHtml(schedule.teacherName)}</td><td>${this.escapeHtml(schedule.day)}</td><td>${this.formatTime(schedule.startTime)} - ${this.formatTime(schedule.endTime)}</td></tr>`).join('')}</tbody></table>
+                <div class="view-row"><button type="button" class="btn-view" onclick="manager.showRoomSchedule('${safeRoom}', '${safeTerm}')">View Timetable</button></div>
+            </div>`;
         }).join('');
     }
 
@@ -1280,6 +1319,7 @@ class ScheduleManager {
         const viewId = viewType === 'teacher' ? 'teacherView'
             : viewType === 'all' ? 'allView'
             : viewType === 'students' ? 'studentsView'
+            : viewType === 'rooms' ? 'roomsView'
             : viewType === 'owner' ? 'ownerView'
             : 'manageView';
         if (viewType === 'owner' && !this.isOwner) {
@@ -1290,7 +1330,7 @@ class ScheduleManager {
         document.getElementById(viewId).classList.add('active');
         const mainContent = document.querySelector('.main-content');
         if (mainContent) {
-            mainContent.classList.toggle('all-view-active', viewType === 'all' || viewType === 'students');
+            mainContent.classList.toggle('all-view-active', viewType === 'all' || viewType === 'students' || viewType === 'rooms');
             mainContent.classList.toggle('manage-view-active', viewType === 'manage');
         }
     }
@@ -1549,6 +1589,23 @@ class ScheduleManager {
         const grid = this.buildScheduleGrid(sectionSchedules, daysToShow, slots, 'section');
         document.getElementById('modalTeacherName').textContent = `${sectionName} — Student Timetable`;
         document.getElementById('scheduleGridContainer').innerHTML = grid;
+        document.getElementById('teacherScheduleModal').classList.remove('hidden');
+    }
+
+    showRoomSchedule(roomName, term = null) {
+        const roomSchedules = this.schedules.filter(s => (s.room || '').toLowerCase() === roomName.toLowerCase() && (term === null || (term ? this.sameTerm(s.term, term) : !s.term)));
+        if (!roomSchedules.length) return this.showNotification('No schedules found for this room.', 'error');
+        const modal = document.getElementById('teacherScheduleModal');
+        if (modal) { modal.dataset.teacher = ''; modal.dataset.section = ''; modal.dataset.term = term || ''; }
+        document.getElementById('viewLoadBtn')?.classList.add('hidden');
+        document.getElementById('viewSectionOfficialModalBtn')?.classList.add('hidden');
+        const allDays = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+        const daysToShow = allDays.filter(day => day !== 'Saturday' || roomSchedules.some(s => s.day === day));
+        const latestEndMin = roomSchedules.reduce((max, s) => Math.max(max, this.timeToMinutes(s.endTime)), 0);
+        const displayEnd = Math.min(Math.max(17 * 60, latestEndMin), 21 * 60);
+        const slots = this.generateTimeSlots().filter(slot => this.timeToMinutes(slot.start) < displayEnd);
+        document.getElementById('modalTeacherName').textContent = `${roomName} — Room Timetable`;
+        document.getElementById('scheduleGridContainer').innerHTML = this.buildScheduleGrid(roomSchedules, daysToShow, slots, 'room');
         document.getElementById('teacherScheduleModal').classList.remove('hidden');
     }
 

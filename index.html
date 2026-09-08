@@ -64,6 +64,7 @@
             <button class="toggle-btn" data-view="manage">MANAGE LISTS</button>
             <button class="toggle-btn" data-view="all">TEACHERS SCHEDULE</button>
             <button class="toggle-btn" data-view="students">STUDENTS SCHEDULE</button>
+            <button class="toggle-btn" data-view="rooms">ROOM ASSIGNMENT</button>
         </nav>
 
         <div class="main-content">
@@ -197,6 +198,12 @@
                     <div id="studentSectionList" class="student-section-list">
                         <p class="empty-message">No student schedules yet. Add a class to get started!</p>
                     </div>
+                </div>
+
+                <!-- Room Assignment View -->
+                <div id="roomsView" class="view-content">
+                    <div class="view-heading"><div><p class="eyebrow">ROOM TIMETABLES</p><h2>ROOM ASSIGNMENT</h2></div><div class="view-tools"><select id="roomsViewTermFilter" class="term-filter" aria-label="Filter room assignments by term"><option value="">All Terms</option><option value="1st semester">1st Semester</option><option value="2nd semester">2nd Semester</option><option value="summer">Summer</option></select><label class="schedule-search"><span class="sr-only">Search room assignments</span><input id="roomAssignmentSearch" type="search" placeholder="Search room" autocomplete="off"></label></div></div><br>
+                    <div id="roomAssignmentList" class="all-schedules"><p class="empty-message">No room assignments yet. Add a class to get started!</p></div>
                 </div>
 
                 <!-- Owner-only administration view. It is hidden unless the signed-in profile is an owner/school admin. -->
