@@ -1547,6 +1547,7 @@ class ScheduleManager {
         const modal = document.getElementById('teacherScheduleModal');
         if (modal) {
             modal.dataset.teacher = teacherName;
+            modal.dataset.room = '';
             modal.dataset.term = term || '';
         }
         if (modal) modal.dataset.section = '';
@@ -1578,7 +1579,7 @@ class ScheduleManager {
         const sectionSchedules = this.schedules.filter(s => (s.courseYear || '').toLowerCase() === sectionName.toLowerCase() && (term === null || (term ? this.sameTerm(s.term, term) : !s.term)));
         if (!sectionSchedules.length) return this.showNotification('No schedules found for this section.', 'error');
         const modal = document.getElementById('teacherScheduleModal');
-        if (modal) { modal.dataset.teacher = ''; modal.dataset.section = sectionName; modal.dataset.term = term || ''; }
+        if (modal) { modal.dataset.teacher = ''; modal.dataset.room = ''; modal.dataset.section = sectionName; modal.dataset.term = term || ''; }
         document.getElementById('viewLoadBtn')?.classList.add('hidden');
         document.getElementById('viewSectionOfficialModalBtn')?.classList.remove('hidden');
         const allDays = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
@@ -1596,7 +1597,7 @@ class ScheduleManager {
         const roomSchedules = this.schedules.filter(s => (s.room || '').toLowerCase() === roomName.toLowerCase() && (term === null || (term ? this.sameTerm(s.term, term) : !s.term)));
         if (!roomSchedules.length) return this.showNotification('No schedules found for this room.', 'error');
         const modal = document.getElementById('teacherScheduleModal');
-        if (modal) { modal.dataset.teacher = ''; modal.dataset.section = ''; modal.dataset.term = term || ''; }
+        if (modal) { modal.dataset.teacher = ''; modal.dataset.section = ''; modal.dataset.room = roomName; modal.dataset.term = term || ''; }
         document.getElementById('viewLoadBtn')?.classList.add('hidden');
         document.getElementById('viewSectionOfficialModalBtn')?.classList.add('hidden');
         const allDays = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
@@ -1692,6 +1693,7 @@ class ScheduleManager {
         const modal = document.getElementById('teacherScheduleModal');
         const section = modal?.dataset?.section || '';
         const teacher = modal?.dataset?.teacher || '';
+        const room = modal?.dataset?.room || '';
         const term = modal?.dataset?.term || null;
         const element = section ? this.generateSectionOfficialElement(section, term) : document.getElementById('scheduleGridContainer')?.cloneNode(true);
         if (!element) return this.showNotification('Schedule not available to download.', 'error');
@@ -1700,12 +1702,12 @@ class ScheduleManager {
             element.style.padding = '16px';
             const heading = document.createElement('div');
             heading.style.cssText = 'text-align:center; color:#111; font-family:Arial, Helvetica, sans-serif; font-size:18px; font-weight:700; margin-bottom:16px;';
-            heading.textContent = teacher ? `${teacher} - ${this.formatTerm(term)} Schedule` : 'Teacher Schedule';
+            heading.textContent = room ? `${room} ASSIGNMENT`.toUpperCase() : teacher ? `${teacher} - ${this.formatTerm(term)} Schedule` : 'Teacher Schedule';
             element.prepend(heading);
         }
         document.body.appendChild(element);
         this.createPdfFromElement(element, section ? { orientation: 'landscape', format: 'a4' } : {}).then(pdf => {
-            const label = section ? `${section}-${this.formatTerm(term)}-${this.schoolYear}-student-schedule` : `${teacher}-${this.formatTerm(term)}-${this.schoolYear}-teacher-schedule`;
+            const label = section ? `${section}-${this.formatTerm(term)}-${this.schoolYear}-student-schedule` : room ? `${room}-${this.formatTerm(term)}-${this.schoolYear}-assignment` : `${teacher}-${this.formatTerm(term)}-${this.schoolYear}-teacher-schedule`;
             pdf.save(this.pdfFilename(label));
             this.showNotification('PDF downloaded.', 'success');
         }).catch(error => this.showNotification('Failed to download PDF: ' + error.message, 'error'))
@@ -1870,6 +1872,7 @@ class ScheduleManager {
         if (!container) return this.showNotification('Schedule not available to export.', 'error');
         const modal = document.getElementById('teacherScheduleModal');
         const teacher = modal?.dataset?.teacher || '';
+        const room = modal?.dataset?.room || '';
         const term = modal?.dataset?.term || null;
         const exportContainer = container.cloneNode(true);
         exportContainer.style.background = '#fff';
@@ -1877,7 +1880,7 @@ class ScheduleManager {
         exportContainer.style.width = `${container.scrollWidth || 1000}px`;
         const heading = document.createElement('div');
         heading.style.cssText = 'text-align:center; color:#111; font-family:Arial, Helvetica, sans-serif; font-size:18px; font-weight:700; margin-bottom:16px;';
-        heading.textContent = teacher ? `${teacher} - ${this.formatTerm(term)} Schedule` : 'Teacher Schedule';
+        heading.textContent = room ? `${room} ASSIGNMENT`.toUpperCase() : teacher ? `${teacher} - ${this.formatTerm(term)} Schedule` : 'Teacher Schedule';
         exportContainer.prepend(heading);
         document.body.appendChild(exportContainer);
         this.createPdfFromElement(exportContainer).then(pdf => {
@@ -2962,4 +2965,11 @@ let manager;
 document.addEventListener('DOMContentLoaded', async () => {
     if (window.supabaseConfigReady) await window.supabaseConfigReady;
     manager = new ScheduleManager();
+    const scrollToTopButton = document.getElementById('scrollToTopBtn');
+    const updateScrollToTopVisibility = () => {
+        scrollToTopButton?.classList.toggle('is-visible', window.scrollY > 280);
+    };
+    window.addEventListener('scroll', updateScrollToTopVisibility, { passive: true });
+    updateScrollToTopVisibility();
+    scrollToTopButton?.addEventListener('click', () => window.scrollTo({ top: 0, behavior: 'smooth' }));
 });
