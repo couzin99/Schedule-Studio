@@ -92,24 +92,26 @@
                             <option value="">-- Select Teacher --</option>
                         </select>
                     </div>
+                    <div class="schedule-course-row">
+                        <div class="form-group">
+                            <label for="courseSelect">Course &amp; Year:</label>
+                            <select id="courseSelect" required>
+                                <option value="">-- Select Course &amp; Year --</option>
+                            </select>
+                        </div>
 
-                    <div class="form-group">
-                        <label for="courseSelect">Course &amp; Year:</label>
-                        <select id="courseSelect" required>
-                            <option value="">-- Select Course &amp; Year --</option>
-                        </select>
+                        <div class="form-group">
+                            <label for="sectionInput">Section:</label>
+                            <select id="sectionInput" required>
+                                <option value="">-- Select Section --</option>
+                                <option value="A">A</option>
+                                <option value="B">B</option>
+                                <option value="C">C</option>
+                                <option value="IRREGULAR">IRREGULAR</option>
+                            </select>
+                        </div>
                     </div>
-
-                    <div class="form-group">
-                        <label for="sectionInput">Section:</label>
-                        <select id="sectionInput" required>
-                            <option value="">-- Select Section --</option>
-                            <option value="A">A</option>
-                            <option value="B">B</option>
-                            <option value="C">C</option>
-                            <option value="IRREGULAR">IRREGULAR</option>
-                        </select>
-                    </div>
+                    
 
                     <div class="form-group">
                         <label for="subjectSelect">Subject:</label>
@@ -125,7 +127,8 @@
                     <div id="scheduleSlots">
                         <div class="schedule-slot" data-slot-index="0">
                             <div class="schedule-slot-heading"><strong>Class meeting 1</strong></div>
-                            <div class="form-group">
+                            <div class="time-row">
+                                <div class="form-group">
                                 <label for="startTime">Start Time:</label>
                                 <input type="time" id="startTime" required>
                             </div>
@@ -134,6 +137,8 @@
                                 <label for="endTime">End Time:</label>
                                 <input type="time" id="endTime" required>
                             </div>
+                            </div>
+                            
 
                             <div class="form-group">
                                 <span class="field-label">Days:</span>
@@ -143,24 +148,26 @@
                                     <label><span>W</span><input type="checkbox" name="days" value="Wednesday"></label>
                                     <label><span>Th</span><input type="checkbox" name="days" value="Thursday"></label>
                                     <label><span>F</span><input type="checkbox" name="days" value="Friday"></label>
-                                    <label><span>Sat</span><input type="checkbox" name="days" value="Saturday"></label>
+                                    <label><span>Sa</span><input type="checkbox" name="days" value="Saturday"></label>
                                 </div>
                             </div>
-
+                            <div class="selector-row">
                             <div class="form-group">
                                 <label for="buildingSelect">Campus Building:</label>
                                 <select id="buildingSelect" required>
                                     <option value="">-- Select Building --</option>
                                 </select>
                             </div>
-
+                            
                             <div class="form-group">
                                 <label for="roomSelect">Room:</label>
                                 <select id="roomSelect" required>
                                     <option value="">-- Select Room --</option>
                                 </select>
-                                <small id="roomHint" class="room-hint">Pick a day and time to see available rooms.</small>
+                                
                             </div>
+                            </div>
+                            
                         </div>
                     </div>
                     <button type="button" id="addScheduleSlotBtn" class="btn-secondary">+ Add another meeting</button>
@@ -202,7 +209,9 @@
 
                 <!-- Room Assignment View -->
                 <div id="roomsView" class="view-content">
-                    <div class="view-heading"><div><p class="eyebrow">ROOM TIMETABLES</p><h2>ROOM ASSIGNMENT</h2></div><div class="view-tools"><select id="roomsViewTermFilter" class="term-filter" aria-label="Filter room assignments by term"><option value="">All Terms</option><option value="1st semester">1st Semester</option><option value="2nd semester">2nd Semester</option><option value="summer">Summer</option></select><label class="schedule-search"><span class="sr-only">Search room assignments</span><input id="roomAssignmentSearch" type="search" placeholder="Search room" autocomplete="off"></label></div></div><br>
+                    <div class="view-heading"><div><p class="eyebrow">ROOM TIMETABLES</p><h2>ROOM ASSIGNMENT</h2></div><div class="view-tools"><select id="roomsViewTermFilter" class="term-filter" aria-label="Filter room assignments by term"><option value="">All Terms</option><option value="1st semester">1st Semester</option><option value="2nd semester">2nd Semester</option><option value="summer">Summer</option></select><select id="roomsViewBuildingFilter" class="term-filter" aria-label="Filter room assignments by building">
+                        <option value="">All Buildings</option>
+                    </select><label class="schedule-search"><span class="sr-only">Search room assignments</span><input id="roomAssignmentSearch" type="search" placeholder="Search room" autocomplete="off"></label></div></div><br>
                     <div id="roomAssignmentList" class="all-schedules"><p class="empty-message">No room assignments yet. Add a class to get started!</p></div>
                 </div>
 

@@ -17,6 +17,7 @@ class ScheduleManager {
         this.ownerViewingUserId = null;
         this.ownerAllSchedules = [];
         this.ownerCatalog = {};
+        this.syncRequestId = 0;
         this.curriculumCatalog = Array.isArray(window.CURRICULUM_CATALOG)
             ? window.CURRICULUM_CATALOG.map(entry => ({ ...entry, term: entry.term === '3rd term' ? 'summer' : entry.term }))
             : [];
@@ -30,6 +31,22 @@ class ScheduleManager {
         this.allViewTermFilter = '';
         this.studentsViewTermFilter = '';
         this.roomsViewTermFilter = '';
+        this.roomsViewBuildingFilter = '';
+        // Pagination state
+        this.pagination = {
+            teacher: 1,
+            all: 1,
+            students: 1,
+            rooms: 1,
+            manageTeachers: 1,
+            manageRooms: 1,
+            manageBuildings: 1,
+            manageSubjects: 1,
+            manageCourses: 1,
+            owner: 1
+        };
+
+        this.itemsPerPage = 3;
         this.pendingOwnerViewingUserId = sessionStorage.getItem('scheduleStudioOwnerUser') || null;
         this.buildings = Array.from(new Set([...this.buildings, ...Object.values(this.roomDetails).map(info => info && info.building).filter(Boolean)]));
         this.subjectColors = this.loadSubjectColors();
@@ -112,6 +129,10 @@ class ScheduleManager {
         });
         document.getElementById('roomAssignmentSearch')?.addEventListener('input', e => {
             this.roomAssignmentSearch = e.target.value.trim().toLowerCase();
+            this.renderRoomAssignmentsView();
+        });
+        document.getElementById('roomsViewBuildingFilter')?.addEventListener('change', e => {
+            this.roomsViewBuildingFilter = e.target.value;
             this.renderRoomAssignmentsView();
         });
         [['teacherViewTermFilter', 'teacherViewTermFilter', 'renderTeacherView'], ['allViewTermFilter', 'allViewTermFilter', 'renderAllView'], ['studentsViewTermFilter', 'studentsViewTermFilter', 'renderStudentsView'], ['roomsViewTermFilter', 'roomsViewTermFilter', 'renderRoomAssignmentsView']].forEach(([id, property, renderer]) => {
@@ -420,7 +441,6 @@ class ScheduleManager {
         const year = Number.parseInt(yearText, 10);
         const courseYear = `${curriculumCourseYear}${section}`;
         const curriculumEntry = this.getSelectedCurriculumEntry();
-        if (this.curriculumCatalog.length && !curriculumEntry) return this.showNotification('Select a subject from the curriculum list.', 'error');
         const subjectInfo = curriculumEntry || this.subjectDetails[subject] || {};
         const courseCode = subjectInfo.code || subjectInfo.courseCode || '';
         const parsedUnits = Number.parseInt(subjectInfo.units, 10);
@@ -593,6 +613,31 @@ class ScheduleManager {
         return `${displayHour}:${minutes} ${ampm}`;
     }
 
+    formatDescriptiveTitle(title) {
+        const minorWords = new Set([
+            'a', 'an', 'the',
+            'and', 'or', 'but',
+            'as', 'at', 'by', 'for',
+            'in', 'of', 'on', 'to',
+            'via', 'ng'
+        ]);
+
+        return String(title || '')
+            .trim()
+            .toLowerCase()
+            .split(/\s+/)
+            .map((word, index) => {
+                if (/^\d/.test(word)) return word;
+
+                if (index > 0 && minorWords.has(word)) {
+                    return word;
+                }
+
+                return word.charAt(0).toUpperCase() + word.slice(1);
+            })
+            .join(' ');
+    }
+
     getTeacherSchedules(teacherName, term = null) {
         return this.schedules.filter(s => s.teacherName.toLowerCase() === teacherName.toLowerCase() && (term === null || (term ? this.sameTerm(s.term, term) : !s.term)));
     }
@@ -660,6 +705,94 @@ class ScheduleManager {
         this.updateRoomOptions();
     }
 
+    // ==================== PAGINATION ====================
+
+    getPaginatedItems(items, pageKey) {
+        const totalPages = Math.max(1, Math.ceil(items.length / this.itemsPerPage));
+
+        // Keep the current page valid if items were deleted or filtered.
+        this.pagination[pageKey] = Math.min(
+            Math.max(1, this.pagination[pageKey] || 1),
+            totalPages
+        );
+
+        const currentPage = this.pagination[pageKey];
+        const start = (currentPage - 1) * this.itemsPerPage;
+        const end = start + this.itemsPerPage;
+
+        return {
+            items: items.slice(start, end),
+            currentPage,
+            totalPages,
+            totalItems: items.length,
+            startItem: items.length ? start + 1 : 0,
+            endItem: Math.min(end, items.length)
+        };
+    }
+
+    changePage(pageKey, page) {
+        const targetPage = Number.parseInt(page, 10);
+
+        if (!Number.isFinite(targetPage)) return;
+
+        this.pagination[pageKey] = Math.max(1, targetPage);
+        this.render();
+    }
+
+    resetPage(pageKey) {
+        this.pagination[pageKey] = 1;
+    }
+
+    renderPagination(pageKey, totalItems) {
+        if (totalItems <= this.itemsPerPage) return '';
+
+        const totalPages = Math.ceil(totalItems / this.itemsPerPage);
+        const currentPage = Math.min(
+            Math.max(1, this.pagination[pageKey] || 1),
+            totalPages
+        );
+
+        this.pagination[pageKey] = currentPage;
+
+        const startItem = (currentPage - 1) * this.itemsPerPage + 1;
+        const endItem = Math.min(
+            currentPage * this.itemsPerPage,
+            totalItems
+        );
+
+        return `
+            <div class="pagination" data-pagination="${pageKey}">
+                <div class="pagination-info">
+                    Showing ${startItem}–${endItem} of ${totalItems}
+                </div>
+
+                <div class="pagination-controls">
+                    <button
+                        type="button"
+                        class="pagination-btn"
+                        ${currentPage === 1 ? 'disabled' : ''}
+                        onclick="manager.changePage('${pageKey}', ${currentPage - 1})"
+                    >
+                        Previous
+                    </button>
+
+                    <span class="pagination-page">
+                        Page ${currentPage} of ${totalPages}
+                    </span>
+
+                    <button
+                        type="button"
+                        class="pagination-btn"
+                        ${currentPage === totalPages ? 'disabled' : ''}
+                        onclick="manager.changePage('${pageKey}', ${currentPage + 1})"
+                    >
+                        Next
+                    </button>
+                </div>
+            </div>
+        `;
+    }
+
     render() {
         this.renderDashboard();
         this.renderTeacherView();
@@ -715,11 +848,22 @@ class ScheduleManager {
             return;
         }
 
-        teacherList.innerHTML = uniqueTeachers.flatMap(teacherName => {
+        // Build teacher + term groups first so each card stays together.
+        const teacherGroups = uniqueTeachers.flatMap(teacherName => {
             const terms = [...new Set(this.getTeacherSchedules(teacherName).map(schedule => schedule.term || ''))]
                 .filter(term => !this.teacherViewTermFilter || term === this.teacherViewTermFilter)
                 .sort((a, b) => this.compareTerms(a, b));
-            return terms.map(term => {
+
+            return terms.map(term => ({
+                teacherName,
+                term
+            }));
+        });
+
+        // Paginate teacher cards, not individual schedule rows.
+        const teacherPage = this.getPaginatedItems(teacherGroups, 'teacher');
+
+        teacherList.innerHTML = teacherPage.items.map(({ teacherName, term }) => {
             const teacherSchedules = this.getTeacherSchedules(teacherName, term);
             const conflicts = this.getTeacherConflicts(teacherName, term);
             const hasConflict = conflicts.length > 0;
@@ -731,25 +875,31 @@ class ScheduleManager {
                         <span class="term-badge">${this.formatTerm(term)}</span>
                         ${hasConflict ? '<span class="conflict-badge">⚠️ CONFLICT</span>' : ''}
                     </div>
+
                     ${hasConflict ? `
                         <div class="conflict-notice">
                             ❌ This teacher has ${conflicts.length} scheduling conflict(s). Please fix before confirming.
                         </div>
                     ` : ''}
+
                     <table class="schedule-table">
                         <thead>
                             <tr>
-                                        <th>Subject</th>
-                                        <th>Course &amp; Year</th>
-                                        <th>Day</th>
-                                        <th>Time</th>
-                                        <th>Room</th>
-                                        <th>Action</th>
-                                    </tr>
+                                <th>Subject</th>
+                                <th>Course &amp; Year</th>
+                                <th>Day</th>
+                                <th>Time</th>
+                                <th>Room</th>
+                                <th>Action</th>
+                            </tr>
                         </thead>
+
                         <tbody>
                             ${teacherSchedules.map(schedule => {
-                                const isConflicted = conflicts.some(c => c.schedule1.id === schedule.id || c.schedule2.id === schedule.id);
+                                const isConflicted = conflicts.some(
+                                    c => c.schedule1.id === schedule.id || c.schedule2.id === schedule.id
+                                );
+
                                 return `
                                     <tr class="${isConflicted ? 'conflict-row' : ''}">
                                         <td>${schedule.subject}</td>
@@ -757,7 +907,16 @@ class ScheduleManager {
                                         <td>${schedule.day}</td>
                                         <td>${this.formatTime(schedule.startTime)} - ${this.formatTime(schedule.endTime)}</td>
                                         <td>${schedule.room}</td>
-                                        <td><!-- <button type="button" class="edit-btn" onclick="manager.openScheduleEdit('${String(schedule.id).replace(/'/g, "\\'")}')">Edit</button> --> <button type="button" class="delete-btn" onclick="manager.deleteSchedule('${String(schedule.id).replace(/'/g, "\\'")}')">Delete</button></td>
+                                        <td>
+                                            <!-- <button type="button" class="edit-btn" onclick="manager.openScheduleEdit('${String(schedule.id).replace(/'/g, "\\'")}')">Edit</button> -->
+                                            <button
+                                                type="button"
+                                                class="delete-btn"
+                                                onclick="manager.deleteSchedule('${String(schedule.id).replace(/'/g, "\\'")}')"
+                                            >
+                                                Delete
+                                            </button>
+                                        </td>
                                     </tr>
                                 `;
                             }).join('')}
@@ -765,8 +924,13 @@ class ScheduleManager {
                     </table>
                 </div>
             `;
-            });
         }).join('');
+
+        // Add pagination controls underneath the teacher cards.
+        teacherList.insertAdjacentHTML(
+            'beforeend',
+            this.renderPagination('teacher', teacherPage.totalItems)
+        );
     }
 
     renderAllView() {
@@ -801,16 +965,28 @@ class ScheduleManager {
             return;
         }
 
-        allSchedules.innerHTML = filteredGroups.map(group => {
+        const allPage = this.getPaginatedItems(filteredGroups, 'all');
+
+        allSchedules.innerHTML = allPage.items.map(group => {
             const { teacherName, term, schedules: teacherSchedules } = group;
             const conflicts = this.getTeacherConflicts(teacherName, term);
             const hasConflict = conflicts.length > 0;
             return `
                 <div class="teacher-card ${hasConflict ? 'has-conflict' : ''}">
-                    <div class="teacher-name">
-                        ${teacherName}
-                        <span class="term-badge">${this.formatTerm(term)}</span>
-                        ${hasConflict ? '<span class="conflict-badge">⚠️ CONFLICT</span>' : ''}
+                    <div class="student-section-header">
+                        <div class="teacher-name">
+                            ${teacherName}
+                            <span class="term-badge">${this.formatTerm(term)}</span>
+                            ${hasConflict ? '<span class="conflict-badge">⚠️ CONFLICT</span>' : ''}
+                        </div>
+
+                        <button
+                            type="button"
+                            class="btn-view student-view-timetable"
+                            onclick="manager.showTeacherSchedule('${teacherName.replace(/'/g, "\\'")}', '${term.replace(/'/g, "\\'")}')"
+                        >
+                            View Timetable
+                        </button>
                     </div>
                     ${hasConflict ? `
                         <div class="conflict-notice">
@@ -842,12 +1018,14 @@ class ScheduleManager {
                             }).join('')}
                         </tbody>
                     </table>
-                    <div class="view-row">
-                        <button type="button" class="btn-view" onclick="manager.showTeacherSchedule('${teacherName.replace(/'/g, "\\'")}', '${term.replace(/'/g, "\\'")}')">View Timetable</button>
-                    </div>
                 </div>
             `;
         }).join('');
+
+        allSchedules.insertAdjacentHTML(
+            'beforeend',
+            this.renderPagination('all', allPage.totalItems)
+        );  
     }
 
     clearScheduleForm() {
@@ -883,11 +1061,16 @@ class ScheduleManager {
         slot.dataset.slotIndex = index;
         slot.innerHTML = `
             <div class="schedule-slot-heading"><strong>Class meeting ${index + 1}</strong><button type="button" class="remove-schedule-slot" aria-label="Remove meeting">Remove</button></div>
-            <div class="form-group"><label>Start Time:</label><input type="time" data-field="startTime" required></div>
-            <div class="form-group"><label>End Time:</label><input type="time" data-field="endTime" required></div>
+            <div class="time-row">
+                <div class="form-group"><label>Start Time:</label><input type="time" data-field="startTime" required></div>
+                <div class="form-group"><label>End Time:</label><input type="time" data-field="endTime" required></div>
+            </div>
             <div class="form-group"><span class="field-label">Days:</span><div class="day-options" role="group" aria-label="Days for class meeting ${index + 1}">${days.map(([day, shortDay]) => `<label><span>${shortDay}</span><input type="checkbox" name="days" value="${day}"></label>`).join('')}</div></div>
-            <div class="form-group"><label>Campus Building:</label><select data-field="building" required><option value="">-- Select Building --</option>${buildings.map(building => `<option value="${building}">${building}</option>`).join('')}</select></div>
-            <div class="form-group"><label>Room:</label><select data-field="room" required><option value="">-- Select Room --</option></select><small class="room-hint">Pick a day and time to see available rooms.</small></div>`;
+            <div class="selector-row">
+                <div class="form-group"><label>Campus Building:</label><select data-field="building" required><option value="">-- Select Building --</option>${buildings.map(building => `<option value="${building}">${building}</option>`).join('')}</select></div>
+                <div class="form-group"><label>Room:</label><select data-field="room" required><option value="">-- Select Room --</option></select></div>
+            </div>
+            `;
         container.appendChild(slot);
         slot.querySelector('.remove-schedule-slot').addEventListener('click', () => {
             slot.remove();
@@ -910,7 +1093,7 @@ class ScheduleManager {
         if (!list) return;
         const grouped = {};
         this.schedules.forEach(schedule => {
-            const section = (schedule.courseYear || '').trim();
+            const section = this.getCourseYear(schedule).trim();
             if (!section) return;
             const key = `${section}|||${schedule.term || ''}`;
             if (!grouped[key]) grouped[key] = { section, term: schedule.term || '', schedules: [] };
@@ -928,13 +1111,30 @@ class ScheduleManager {
             list.innerHTML = `<p class="empty-message">No sections match "${this.escapeHtml(this.studentSectionSearch)}".</p>`;
             return;
         }
-        list.innerHTML = filteredGroups.map(group => {
+        const studentPage = this.getPaginatedItems(filteredGroups, 'students');
+
+        list.innerHTML = studentPage.items.map(group => {
             const { section, term, schedules: rows } = group;
             const safeSection = section.replace(/\\/g, '\\\\').replace(/'/g, "\\'");
             const safeTerm = term.replace(/\\/g, '\\\\').replace(/'/g, "\\'");
             return `
                 <div class="teacher-card student-section-card">
-                    <div class="teacher-name">${section}<span class="term-badge">${this.formatTerm(term)}</span></div>
+
+                    <div class="student-section-header">
+                        <div class="teacher-name">
+                            ${section}
+                            <span class="term-badge">${this.formatTerm(term)}</span>
+                        </div>
+
+                        <button
+                            type="button"
+                            class="btn-view student-view-timetable"
+                            onclick="manager.showSectionSchedule('${safeSection}', '${safeTerm}')"
+                        >
+                            View timetable
+                        </button>
+                    </div>
+
                     <table class="schedule-table full-table">
                         <thead><tr><th>Subject</th><th>Teacher</th><th>Day</th><th>Time</th><th>Room</th></tr></thead>
                         <tbody>${rows.map(schedule => `
@@ -942,10 +1142,14 @@ class ScheduleManager {
                             <td>${this.formatTime(schedule.startTime)} - ${this.formatTime(schedule.endTime)}</td><td>${schedule.room}</td></tr>
                         `).join('')}</tbody>
                     </table>
-                    <div class="student-section-actions"><button type="button" class="btn-view" onclick="manager.showSectionSchedule('${safeSection}', '${safeTerm}')">View timetable</button></div>
+                    
                 </div>
             `;
         }).join('');
+        list.insertAdjacentHTML(
+            'beforeend',
+            this.renderPagination('students', studentPage.totalItems)
+        );
     }
 
     renderRoomAssignmentsView() {
@@ -962,22 +1166,73 @@ class ScheduleManager {
         const dayOrder = { Monday: 1, Tuesday: 2, Wednesday: 3, Thursday: 4, Friday: 5, Saturday: 6 };
         const groups = Object.values(grouped).sort((a, b) => a.room.localeCompare(b.room) || this.compareTerms(a.term, b.term));
         groups.forEach(group => group.schedules.sort((a, b) => (dayOrder[a.day] || 0) - (dayOrder[b.day] || 0) || a.startTime.localeCompare(b.startTime)));
-        const filteredGroups = groups.filter(group => group.room.toLowerCase().includes(this.roomAssignmentSearch) && (!this.roomsViewTermFilter || group.term === this.roomsViewTermFilter));
+        const buildingFilter = document.getElementById('roomsViewBuildingFilter');
+
+        if (buildingFilter) {
+            const buildings = [...new Set(
+                this.schedules
+                    .map(schedule => (schedule.building || '').trim())
+                    .filter(Boolean)
+            )].sort((a, b) => a.localeCompare(b));
+
+            const currentValue = this.roomsViewBuildingFilter;
+
+            buildingFilter.innerHTML =
+                '<option value="">All Buildings</option>' +
+                buildings.map(building =>
+                    `<option value="${this.escapeHtml(building)}">${this.escapeHtml(building)}</option>`
+                ).join('');
+
+            if (buildings.includes(currentValue)) {
+                buildingFilter.value = currentValue;
+            } else {
+                this.roomsViewBuildingFilter = '';
+                buildingFilter.value = '';
+            }
+        }
+        const filteredGroups = groups.filter(group =>
+            group.room.toLowerCase().includes(this.roomAssignmentSearch) &&
+            (!this.roomsViewTermFilter || group.term === this.roomsViewTermFilter) &&
+            (!this.roomsViewBuildingFilter ||
+                group.schedules.some(schedule =>
+                    (schedule.building || '').trim() === this.roomsViewBuildingFilter
+                )
+            )
+        );
         if (!filteredGroups.length) {
             const message = this.schedules.length ? `No room assignments match "${this.escapeHtml(this.roomAssignmentSearch)}".` : 'No room assignments yet. Add a class to get started!';
             list.innerHTML = `<p class="empty-message">${message}</p>`;
             return;
         }
-        list.innerHTML = filteredGroups.map(group => {
+        const roomPage = this.getPaginatedItems(filteredGroups, 'rooms');
+
+        list.innerHTML = roomPage.items.map(group => {
             const safeRoom = group.room.replace(/\\/g, '\\\\').replace(/'/g, "\\'");
             const safeTerm = group.term.replace(/\\/g, '\\\\').replace(/'/g, "\\'");
             return `<div class="teacher-card room-assignment-card">
-                <div class="teacher-name">${this.escapeHtml(group.room)}<span class="term-badge">${this.formatTerm(group.term)}</span></div>
+                <div class="student-section-header">
+                    <div class="teacher-name">
+                        ${this.escapeHtml(group.room)}
+                        <span class="term-badge">${this.formatTerm(group.term)}</span>
+                    </div>
+
+                    <button
+                        type="button"
+                        class="btn-view student-view-timetable"
+                        onclick="manager.showRoomSchedule('${safeRoom}', '${safeTerm}')"
+                    >
+                        View Timetable
+                    </button>
+                </div>
                 <table class="schedule-table full-table"><thead><tr><th>Subject</th><th>Course &amp; Year</th><th>Teacher</th><th>Day</th><th>Time</th></tr></thead>
                 <tbody>${group.schedules.map(schedule => `<tr><td>${this.escapeHtml(schedule.subject)}</td><td>${this.escapeHtml(schedule.courseYear)}</td><td>${this.escapeHtml(schedule.teacherName)}</td><td>${this.escapeHtml(schedule.day)}</td><td>${this.formatTime(schedule.startTime)} - ${this.formatTime(schedule.endTime)}</td></tr>`).join('')}</tbody></table>
-                <div class="view-row"><button type="button" class="btn-view" onclick="manager.showRoomSchedule('${safeRoom}', '${safeTerm}')">View Timetable</button></div>
+                
             </div>`;
         }).join('');
+        list.insertAdjacentHTML(
+            'beforeend',
+            this.renderPagination('rooms', roomPage.totalItems)
+        );
     }
 
     renderManageView() {
@@ -992,7 +1247,10 @@ class ScheduleManager {
         if (this.teachers.length === 0) {
             teacherListManage.innerHTML = '<p class="empty-message">No teachers added yet.</p>';
         } else {
-            teacherListManage.innerHTML = this.teachers.sort((a, b) => a.localeCompare(b)).map(teacherName => {
+            const teacherItems = this.teachers.slice().sort((a, b) => a.localeCompare(b));
+            const teacherPage = this.getPaginatedItems(teacherItems, 'manageTeachers');
+
+            teacherListManage.innerHTML = teacherPage.items.map(teacherName => {
                 const count = this.schedules.filter(s => s.teacherName === teacherName).length;
                 return `
                     <div class="manage-item">
@@ -1007,12 +1265,19 @@ class ScheduleManager {
                     </div>
                 `;
             }).join('');
+            teacherListManage.insertAdjacentHTML(
+                'beforeend',
+                this.renderPagination('manageTeachers', teacherPage.totalItems)
+            );
         }
 
         if (this.rooms.length === 0) {
             roomListManage.innerHTML = '<p class="empty-message">No rooms added yet.</p>';
         } else {
-            roomListManage.innerHTML = this.rooms.sort((a, b) => a.localeCompare(b)).map(roomName => {
+            const roomItems = this.rooms.slice().sort((a, b) => a.localeCompare(b));
+            const roomPage = this.getPaginatedItems(roomItems, 'manageRooms');
+
+            roomListManage.innerHTML = roomPage.items.map(roomName => {
                 const count = this.schedules.filter(s => s.room === roomName).length;
                 const building = (this.roomDetails[roomName] || {}).building;
                 return `
@@ -1028,12 +1293,37 @@ class ScheduleManager {
                     </div>
                 `;
             }).join('');
+            roomListManage.insertAdjacentHTML(
+                'beforeend',
+                this.renderPagination('manageRooms', roomPage.totalItems)
+            );
         }
 
         if (buildingListManage) {
-            buildingListManage.innerHTML = this.buildings.length ? this.buildings.slice().sort((a,b)=>a.localeCompare(b)).map(building => `
-                <div class="manage-item"><div><div class="manage-item-title">${building}</div><div class="manage-item-subtext">${this.rooms.filter(r => (this.roomDetails[r] || {}).building === building).length} room(s)</div></div><div class="manage-actions"><button type="button" class="edit-btn" onclick="manager.handleEditBuilding('${building.replace(/'/g, "\\'")}')">Edit</button><button type="button" class="delete-btn" onclick="manager.handleDeleteBuilding('${building.replace(/'/g, "\\'")}')">Delete</button></div></div>
-            `).join('') : '<p class="empty-message">No buildings added yet.</p>';
+            if (this.buildings.length === 0) {
+                buildingListManage.innerHTML = '<p class="empty-message">No buildings added yet.</p>';
+            } else {
+                const buildingItems = this.buildings.slice().sort((a, b) => a.localeCompare(b));
+                const buildingPage = this.getPaginatedItems(buildingItems, 'manageBuildings');
+
+                buildingListManage.innerHTML = buildingPage.items.map(building => `
+                    <div class="manage-item">
+                        <div>
+                            <div class="manage-item-title">${building}</div>
+                            <div class="manage-item-subtext">${this.rooms.filter(r => (this.roomDetails[r] || {}).building === building).length} room(s)</div>
+                        </div>
+                        <div class="manage-actions">
+                            <button type="button" class="edit-btn" onclick="manager.handleEditBuilding('${building.replace(/'/g, "\\'")}')">Edit</button>
+                            <button type="button" class="delete-btn" onclick="manager.handleDeleteBuilding('${building.replace(/'/g, "\\'")}')">Delete</button>
+                        </div>
+                    </div>
+                `).join('');
+
+                buildingListManage.insertAdjacentHTML(
+                    'beforeend',
+                    this.renderPagination('manageBuildings', buildingPage.totalItems)
+                );
+            }
         }
 
         // Subjects
@@ -1041,7 +1331,10 @@ class ScheduleManager {
             if (this.subjects.length === 0) {
                 subjectListManage.innerHTML = '<p class="empty-message">No subjects added yet.</p>';
             } else {
-                subjectListManage.innerHTML = this.subjects.sort((a, b) => a.localeCompare(b)).map(subjectName => {
+                const subjectItems = this.subjects.slice().sort((a, b) => a.localeCompare(b));
+                const subjectPage = this.getPaginatedItems(subjectItems, 'manageSubjects');
+
+                subjectListManage.innerHTML = subjectPage.items.map(subjectName => {
                     const count = this.schedules.filter(s => s.subject === subjectName).length;
                     const details = this.subjectDetails[subjectName] || {};
                     const meta = [details.courseCode, Number.isFinite(Number.parseInt(details.units, 10)) ? `${details.units} unit${Number.parseInt(details.units, 10) === 1 ? '' : 's'}` : '3 units'].filter(Boolean).join(' · ');
@@ -1058,6 +1351,10 @@ class ScheduleManager {
                         </div>
                     `;
                 }).join('');
+                subjectListManage.insertAdjacentHTML(
+                    'beforeend',
+                    this.renderPagination('manageSubjects', subjectPage.totalItems)
+                );
             }
         }
 
@@ -1066,7 +1363,10 @@ class ScheduleManager {
             if (this.courses.length === 0) {
                 courseListManage.innerHTML = '<p class="empty-message">No courses added yet.</p>';
             } else {
-                courseListManage.innerHTML = this.courses.sort((a, b) => a.localeCompare(b)).map(courseName => {
+                const courseItems = this.courses.slice().sort((a, b) => a.localeCompare(b));
+                const coursePage = this.getPaginatedItems(courseItems, 'manageCourses');
+
+                courseListManage.innerHTML = coursePage.items.map(courseName => {
                     const count = this.schedules.filter(s => s.courseYear === courseName).length;
                     return `
                         <div class="manage-item">
@@ -1081,6 +1381,10 @@ class ScheduleManager {
                         </div>
                     `;
                 }).join('');
+                courseListManage.insertAdjacentHTML(
+                    'beforeend',
+                    this.renderPagination('manageCourses', coursePage.totalItems)
+                );
             }
         }
     }
@@ -1966,35 +2270,138 @@ class ScheduleManager {
         `;
 
         const getUnits = (schedule) => {
-            const parsed = Number.parseInt(schedule.units, 10);
-            return Number.isFinite(parsed) ? parsed : 3;
-        };
-        // Lecture: 1 hour per unit. Laboratory: 3 hours per unit.
-        const getTeachingHours = (schedule) => getUnits(schedule) * (/\blab(?:oratory)?\b/i.test(schedule.subject || '') ? 3 : 1);
+        const parsed = Number.parseInt(schedule.units, 10);
+        return Number.isFinite(parsed) ? parsed : 3;
+    };
 
-        // Build table rows
-        const rows = schedules.map(s => {
-            // compute units (use stored units if present, otherwise default 3) and hours
-            const units = getUnits(s);
-            const teachingHours = getTeachingHours(s);
-            const timeStr = `${this.formatTime(s.startTime)} - ${this.formatTime(s.endTime)}`;
+    const normalizeLoadKeyPart = (value) => String(value ?? '')
+        .trim()
+        .replace(/\s+/g, ' ')
+        .toUpperCase();
+
+    const getMeetingMinutes = (schedule) => {
+        const start = this.timeToMinutes(schedule.startTime);
+        const end = this.timeToMinutes(schedule.endTime);
+
+        if (!Number.isFinite(start) || !Number.isFinite(end) || end <= start) {
+            return 0;
+        }
+
+        return end - start;
+    };
+
+    const isLaboratory = (schedule) => {
+
+        const courseCode = normalizeLoadKeyPart(schedule.courseCode);
+        const subjectName = normalizeLoadKeyPart(schedule.subject);
+
+        if (/\bLAB(?:ORATORY)?\b/.test(courseCode)) {
+            return true;
+        }
+        if (/\bLAB(?:ORATORY)?\b/.test(subjectName)) {
+            return true;
+        }
+        const delivery = String(schedule.delivery || '')
+            .trim()
+            .toLowerCase();
+
+        if (delivery === 'lab') {
+            return true;
+        }
+
+        if (delivery === 'lec') {
+            return false;
+        }
+
+        const labHours = Number(schedule.labHours) || 0;
+        const lecHours = Number(schedule.lecHours) || 0;
+
+        if (labHours > 0 && lecHours === 0) {
+            return true;
+        }
+
+        if (lecHours > 0 && labHours === 0) {
+            return false;
+        }
+        const units = getUnits(schedule);
+        const meetingMinutes = getMeetingMinutes(schedule);
+
+        if (units > 0 && meetingMinutes > 0) {
+            const expectedLabMinutes = units * 3 * 60;
+
+            if (meetingMinutes === expectedLabMinutes) {
+                return true;
+            }
+        }
+
+        // If none of the LAB rules matched, treat it as lecture.
+        return false;
+    };
+
+    const getTeachingHours = (schedule) => {
+        const units = getUnits(schedule);
+
+        return isLaboratory(schedule)
+            ? units * 3
+            : units;
+    };
+
+        const dayOrder = { Monday: 1, Tuesday: 2, Wednesday: 3, Thursday: 4, Friday: 5, Saturday: 6 };
+        
+        const loadGroups = new Map();
+        schedules.forEach(schedule => {
+            const courseIdentity = String(schedule.courseCode || schedule.subject || '').trim().toLowerCase();
+            const sectionIdentity = String(schedule.courseYear || '').trim().toLowerCase();
+            // Keep lecture and laboratory variants separate even when their descriptive titles match.
+            const key = `${courseIdentity}|||${sectionIdentity}|||${isLaboratory(schedule) ? 'lab' : 'lec'}`;
+            if (!loadGroups.has(key)) loadGroups.set(key, { schedule, meetings: [] });
+            loadGroups.get(key).meetings.push(schedule);
+        });
+
+        const loadEntries = [...loadGroups.values()].sort((a, b) => {
+            const firstA = a.meetings.slice().sort((x, y) => (dayOrder[x.day] || 0) - (dayOrder[y.day] || 0) || x.startTime.localeCompare(y.startTime))[0];
+            const firstB = b.meetings.slice().sort((x, y) => (dayOrder[x.day] || 0) - (dayOrder[y.day] || 0) || x.startTime.localeCompare(y.startTime))[0];
+            return (dayOrder[firstA.day] || 0) - (dayOrder[firstB.day] || 0) || firstA.startTime.localeCompare(firstB.startTime) || firstA.courseYear.localeCompare(firstB.courseYear);
+        });
+
+        // Build one teaching-load row per subject/course-section, combining its weekly meetings.
+        const rows = loadEntries.map(({ schedule, meetings }) => {
+            const units = getUnits(schedule);
+            const teachingHours = getTeachingHours(schedule);
+            const orderedMeetings = meetings.slice().sort((a, b) => (dayOrder[a.day] || 0) - (dayOrder[b.day] || 0) || a.startTime.localeCompare(b.startTime));
+            const uniqueTimes = [];
+            const seenTimes = new Set();
+
+            orderedMeetings.forEach(item => {
+                const time = `${this.formatTime(item.startTime)} - ${this.formatTime(item.endTime)}`;
+
+                if (!seenTimes.has(time)) {
+                    seenTimes.add(time);
+                    uniqueTimes.push(time);
+                }
+            });
+
+            const timeStr = uniqueTimes.join('<br>');
+            const days = orderedMeetings.map(item => item.day).filter((day, index, values) => values.indexOf(day) === index).join(', ');
+            const buildings = orderedMeetings.map(item => item.building || '').filter((value, index, values) => value && values.indexOf(value) === index).join('<br>');
+            const rooms = orderedMeetings.map(item => item.room || '').filter((value, index, values) => value && values.indexOf(value) === index).join('<br>');
             return `<tr>
-                <td style="border:1px solid #000; padding:6px;">${s.courseCode || ''}</td>
-                <td style="border:1px solid #000; padding:6px;">${s.subject}</td>
-                <td style="border:1px solid #000; padding:6px;">${s.courseYear}</td>
+                <td style="border:1px solid #000; padding:6px;">${this.escapeHtml(schedule.courseCode || '')}</td>
+                <td style="border:1px solid #000; padding:6px;">${this.escapeHtml((this.formatDescriptiveTitle(schedule.subject)))}</td>
+                <td style="border:1px solid #000; padding:6px;">${this.escapeHtml(schedule.courseYear)}</td>
                 <td style="border:1px solid #000; padding:6px; text-align:center;">${units}</td>
                 <td style="border:1px solid #000; padding:6px; text-align:center;">${teachingHours}</td>
                 <td style="border:1px solid #000; padding:6px; text-align:center;"></td>
                 <td style="border:1px solid #000; padding:6px;">${timeStr}</td>
-                <td style="border:1px solid #000; padding:6px; text-align:center;">${s.day}</td>
-                <td style="border:1px solid #000; padding:6px;">${s.building || ''}</td>
-                <td style="border:1px solid #000; padding:6px;">${s.room}</td>
+                <td style="border:1px solid #000; padding:6px; text-align:center;">${this.escapeHtml(days)}</td>
+                <td style="border:1px solid #000; padding:6px;">${this.escapeHtml(buildings).replace(/\n/g, '<br>')}</td>
+                <td style="border:1px solid #000; padding:6px;">${this.escapeHtml(rooms).replace(/\n/g, '<br>')}</td>
             </tr>`;
         }).join('');
 
-        // Totals (sum units/hours)
-        const totalUnits = schedules.reduce((sum, s) => sum + getUnits(s), 0);
-        const totalHours = schedules.reduce((sum, s) => sum + getTeachingHours(s), 0);
+        // Totals count each course-section once, regardless of how many weekly meetings it has.
+        const totalUnits = loadEntries.reduce((sum, entry) => sum + getUnits(entry.schedule), 0);
+        const totalHours = loadEntries.reduce((sum, entry) => sum + getTeachingHours(entry.schedule), 0);
         const regularLoad = Math.min(totalUnits, 24);
         const overloadUnits = Math.max(totalUnits - 24, 0);
 
@@ -2195,15 +2602,54 @@ class ScheduleManager {
         if (changed) this.saveSchedules();
     }
 
+        normalizeProgram(program) {
+        const normalized = String(program || '').trim().toUpperCase();
+
+        const programMap = {
+            BSCE: 'BSCE',
+            BSEE: 'BSEE',
+            BSME: 'BSME',
+            BSCPE: 'BSCpE'
+        };
+
+        return programMap[normalized] || String(program || '').trim();
+    }
+
     parseCourseYear(value) {
-        const normalized = String(value || '').trim().toUpperCase().replace(/[^A-Z0-9]/g, '');
-        const match = normalized.match(/^(BSCE|BSEE|BSME|BSCPE)(\d+)(IRREGULAR|[A-Z])$/);
-        return match ? { program: match[1] === 'BSCPE' ? 'BSCpE' : match[1], year: Number.parseInt(match[2], 10), section: match[3] } : null;
+        const normalized = String(value || '')
+            .trim()
+            .toUpperCase()
+            .replace(/[^A-Z0-9]/g, '');
+
+        const match = normalized.match(
+            /^(BSCE|BSEE|BSME|BSCPE)(\d+)(IRREGULAR|[A-Z])$/
+        );
+
+        if (!match) return null;
+
+        return {
+            program: this.normalizeProgram(match[1]),
+            year: Number.parseInt(match[2], 10),
+            section: match[3]
+        };
+    }
+
+    normalizeCourseYear(value) {
+        const parsed = this.parseCourseYear(value);
+
+        if (parsed) {
+            return `${parsed.program} - ${parsed.year}${parsed.section}`;
+        }
+
+        return String(value || '').trim();
     }
 
     getCourseYear(schedule) {
-        if (schedule.program && schedule.year && schedule.section) return `${schedule.program} - ${schedule.year}${schedule.section}`;
-        return schedule.courseYear || '';
+        if (schedule.program && schedule.year && schedule.section) {
+            return `${this.normalizeProgram(schedule.program)} - ${schedule.year}${schedule.section}`;
+        }
+
+        return this.normalizeCourseYear(schedule.courseYear);
     }
 
     // teachers & rooms
@@ -2371,17 +2817,77 @@ class ScheduleManager {
         const input = document.getElementById('subjectSelect');
         const list = document.getElementById('subjectOptions');
         if (!input || !list) return;
+
         input.disabled = !this.term || !document.getElementById('courseSelect')?.value;
-        const previous = input.value;
-        const entries = this.getCurriculumEntries();
+
+        const course = document.getElementById('courseSelect')?.value || '';
+        const [program, year] = course.split(' - ');
+
+        // Subjects normally offered for the selected term,
+        // course, and year.
+        const recommendedEntries = this.getCurriculumEntries();
+
         const normalizedQuery = query.trim().toLowerCase();
-        const visibleEntries = entries.filter(entry => !normalizedQuery || `${entry.name} ${entry.code}`.toLowerCase().includes(normalizedQuery));
-        list.innerHTML = visibleEntries.length
-            ? visibleEntries.map(entry => `<button type="button" class="subject-option" role="option" data-subject-value="${this.escapeHtml(entry.name)}"><strong>${this.escapeHtml(entry.name)}</strong><span>${this.escapeHtml(entry.code)} · ${this.escapeHtml(entry.delivery || 'Class')}</span></button>`).join('')
+
+        // All curriculum subjects belonging to the selected program.
+        // Year level and term are intentionally NOT restricted here.
+        const programEntries = this.curriculumCatalog
+            .filter(entry =>
+                (!program || entry.program === program)
+            )
+            .sort((a, b) => a.name.localeCompare(b.name));
+
+        // Normal subjects for the currently selected term/year.
+        const visibleRecommendedEntries = recommendedEntries.filter(
+            entry =>
+                !normalizedQuery ||
+                `${entry.name} ${entry.code}`.toLowerCase().includes(normalizedQuery)
+        );
+
+        // Subjects outside the selected term/year that the user
+        // searched for. These are existing curriculum subjects,
+        // not newly created subjects.
+        const exceptionEntries = normalizedQuery
+            ? programEntries.filter(entry => {
+                const matchesSearch =
+                    `${entry.name} ${entry.code}`
+                        .toLowerCase()
+                        .includes(normalizedQuery);
+
+                const alreadyRecommended = recommendedEntries.some(
+                    recommended =>
+                        recommended.name.trim().toLowerCase() ===
+                        entry.name.trim().toLowerCase()
+                );
+
+                return matchesSearch && !alreadyRecommended;
+            })
+            : [];
+
+        const recommendedOptions = visibleRecommendedEntries.map(entry =>
+            `<button type="button" class="subject-option" role="option"
+                data-subject-value="${this.escapeHtml(entry.name)}">
+                <strong>${this.escapeHtml(entry.name)}</strong>
+                <span>${this.escapeHtml(entry.code)} · ${this.escapeHtml(entry.delivery || 'Class')}</span>
+            </button>`
+        ).join('');
+
+        const exceptionOptions = exceptionEntries.map(entry =>
+            `<button type="button" class="subject-option" role="option"
+                data-subject-value="${this.escapeHtml(entry.name)}">
+                <strong>${this.escapeHtml(entry.name)}</strong>
+                <span>${this.escapeHtml(entry.code)}</span>
+            </button>`
+        ).join('');
+
+        list.innerHTML = (recommendedOptions || exceptionOptions)
+            ? `${recommendedOptions}${exceptionOptions}`
             : '<div class="subject-options-empty">No matching subjects</div>';
-        if (entries.some(entry => entry.name === previous)) input.value = previous;
-        else input.value = '';
-        if (document.activeElement === input) this.openSubjectOptions();
+
+        if (document.activeElement === input) {
+            this.openSubjectOptions();
+        }
+
         this.updateSelectedSubjectDetails();
     }
 
@@ -2424,7 +2930,16 @@ class ScheduleManager {
 
     getSelectedCurriculumEntry() {
         const subject = document.getElementById('subjectSelect')?.value.trim() || '';
-        return this.getCurriculumEntries().find(entry => entry.name === subject) || null;
+
+        const course = document.getElementById('courseSelect')?.value || '';
+        const [program] = course.split(' - ');
+
+        // Find the existing curriculum subject within the selected
+        // program, regardless of its normal year or term.
+        return this.curriculumCatalog.find(entry =>
+            entry.name.trim().toLowerCase() === subject.toLowerCase() &&
+            (!program || entry.program === program)
+        ) || null;
     }
 
     updateSelectedSubjectDetails() {
@@ -2433,7 +2948,7 @@ class ScheduleManager {
         const hint = document.getElementById('subjectDetailsHint');
         if (hint) hint.textContent = entry
             ? `${entry.code} · ${entry.delivery || 'Class'} · ${entry.units} unit${entry.units === 1 ? '' : 's'} · ${entry.lecHours} lec / ${entry.labHours} lab hour${entry.labHours === 1 ? '' : 's'}`
-            : 'Select a subject from the filtered curriculum list.';
+            : '';
     }
 
     escapeHtml(value) {
@@ -2553,8 +3068,7 @@ class ScheduleManager {
     checkPrereqs() {
         const btn = document.querySelector('#scheduleForm .btn-add');
         const selected = ['termSelect', 'teacherSelect', 'courseSelect', 'sectionInput', 'subjectSelect'].every(id => document.getElementById(id)?.value.trim());
-        const catalogReady = !this.curriculumCatalog.length || Boolean(this.getSelectedCurriculumEntry());
-        const ok = this.teachers.length > 0 && this.rooms.length > 0 && selected && catalogReady;
+        const ok = this.teachers.length > 0 && this.rooms.length > 0 && selected;
         if (btn) {
             btn.disabled = !ok;
             btn.title = ok ? '' : 'Select a term, teacher, course, subject, day, time, and room before plotting a schedule.';
@@ -2572,8 +3086,43 @@ class ScheduleManager {
         }
         this.supabase.auth.onAuthStateChange((event, session) => {
             this.authEventReceived = true;
-            console.debug('Supabase auth event:', event, session ? 'session present' : 'no session');
-            if (event === 'PASSWORD_RECOVERY') this.showPasswordRecovery();
+
+            console.debug(
+                'Supabase auth event:',
+                event,
+                session ? 'session present' : 'no session'
+            );
+
+            // Password recovery must still work normally.
+            if (event === 'PASSWORD_RECOVERY') {
+                this.showPasswordRecovery();
+                this.applySession(session);
+                return;
+            }
+
+            // Supabase can refresh the token silently when the tab becomes active.
+            // Do NOT reload the application or sync all data again.
+            if (event === 'TOKEN_REFRESHED') {
+                this.currentUser = session ? session.user : null;
+                return;
+            }
+
+            // Supabase may emit SIGNED_IN again when an already-signed-in
+            // user returns to the browser tab.
+            //
+            // If this is the same user we are already displaying, do nothing.
+            if (
+                event === 'SIGNED_IN' &&
+                session &&
+                this.currentUser &&
+                this.currentUser.id === session.user.id
+            ) {
+                console.debug('Already signed in; skipping unnecessary resync.');
+                return;
+            }
+
+            // Actual sign-in, sign-out, or initial authentication
+            // continues through the normal session handling.
             this.applySession(session);
         });
         this.supabase.auth.getSession().then(({ data, error }) => {
@@ -2626,7 +3175,9 @@ class ScheduleManager {
         const appShell = document.getElementById('appShell');
         const identity = document.getElementById('userIdentity');
         const signOutBtn = document.getElementById('signOutBtn');
+        this.syncRequestId++;
         this.currentUser = session ? session.user : null;
+
         if (!session || this.recoveryMode) {
             if (!session) {
                 // Remove the previous account from memory immediately. Keep its
@@ -2771,6 +3322,7 @@ class ScheduleManager {
     }
 
     async signOut() {
+        this.syncRequestId++;
         const { error } = await this.supabase.auth.signOut();
         if (error) this.showNotification(error.message, 'error');
         this.clearAuthFields();
@@ -2806,63 +3358,242 @@ class ScheduleManager {
 
     async syncFromRemote() {
         if (!this.remoteEnabled || !this.supabase || !this.currentUser) return;
+
+        const syncId = this.syncRequestId;
+        const syncUserId = this.currentUser.id;
+        const syncOwnerViewingUserId = this.ownerViewingUserId || null;
+
         try {
-            this.showNotification('Syncing from remote...', 'success');
-            this.ownerCatalog = {};
-            // fetch simple lists: subjects, teachers, rooms, courses
-            const tables = ['subjects','teachers','rooms','courses'];
-            for (const t of tables) {
-                const columns = t === 'subjects' ? 'id,owner_id,name,course_code,units,lec_hours,lab_hours,delivery' : t === 'rooms' ? 'id,owner_id,name,building' : 'id,owner_id,name';
-                const { data, error } = await this.supabase.from(t).select(columns).order('name', { ascending: true });
-                if (error) {
-                    console.warn('Supabase read error for', t, error.message || error);
-                    continue;
-                }
-                if (!data) continue;
-                data.forEach(row => {
-                    if (!row.owner_id) return;
-                    if (!this.ownerCatalog[row.owner_id]) this.ownerCatalog[row.owner_id] = { teachers: [], subjects: [], rooms: [], courses: [] };
-                    this.ownerCatalog[row.owner_id][t].push(row);
-                });
-                const names = data.map(r => String(r.name || '').toUpperCase()).filter(Boolean);
-                if (t === 'subjects') {
-                    this.subjects = names;
-                    data.forEach(row => {
-                    this.subjectDetails[String(row.name || '').toUpperCase()] = {
-                        courseCode: String(row.course_code || '').toUpperCase(),
-                        units: Number(row.units) || 0,
-                        lecHours: Number(row.lec_hours) || 0,
-                        labHours: Number(row.lab_hours) || 0,
-                        delivery: String(row.delivery || '').toLowerCase()
-                    };
-                });
-                    this.saveSubjects(); this.saveListDetails('subjectDetails', this.subjectDetails); this.ensureUniqueSubjectColors();
-                }
-                if (t === 'teachers') { this.teachers = names; this.saveTeachers(); }
-                if (t === 'rooms') {
-                    this.rooms = names;
-                    data.forEach(row => { this.roomDetails[String(row.name || '').toUpperCase()] = { building: String(row.building || '').toUpperCase() }; });
-                    this.buildings = Array.from(new Set([...this.buildings, ...data.map(row => String(row.building || '').toUpperCase()).filter(Boolean)]));
-                    this.saveBuildings();
-                    this.saveRooms(); this.saveListDetails('roomDetails', this.roomDetails);
-                }
-                if (t === 'courses') { this.courses = names; this.saveCourses(); }
+        this.showNotification('Syncing from remote...', 'success');
+
+        const { data: profiles, error: profileError } = await this.supabase
+            .from('profiles')
+            .select('id,email,full_name,department,role,created_at')
+            .order('created_at', { ascending: true });
+
+        if (profileError) {
+            console.warn('Supabase profile read error:', profileError.message || profileError);
+        }
+
+        if (
+            syncId !== this.syncRequestId ||
+            !this.currentUser ||
+            this.currentUser.id !== syncUserId
+        ) {
+            console.debug('Ignoring stale profile sync.');
+            return;
+        }
+
+        this.ownerProfiles = Array.isArray(profiles) ? profiles : [];
+
+        const ownProfile = this.ownerProfiles.find(
+            profile => profile.id === syncUserId
+        );
+
+        this.currentProfile = ownProfile || null;
+
+        this.isOwner = ['owner', 'school_admin'].includes(
+            String(ownProfile?.role || '').toLowerCase()
+        );
+
+        this.ownerCatalog = {};
+
+        const ownerScope = this.isOwner ? null : syncUserId;
+
+        const catalogQueries = [
+            this.supabase
+                .from('teachers')
+                .select('id,owner_id,name')
+                .match(ownerScope ? { owner_id: ownerScope } : {})
+                .order('name', { ascending: true }),
+
+            this.supabase
+                .from('subjects')
+                .select('id,owner_id,name,course_code,units,lec_hours,lab_hours,delivery')
+                .match(ownerScope ? { owner_id: ownerScope } : {})
+                .order('name', { ascending: true }),
+
+            this.supabase
+                .from('rooms')
+                .select('id,owner_id,name,building')
+                .match(ownerScope ? { owner_id: ownerScope } : {})
+                .order('name', { ascending: true }),
+
+            this.supabase
+                .from('courses')
+                .select('id,owner_id,name')
+                .match(ownerScope ? { owner_id: ownerScope } : {})
+                .order('name', { ascending: true })
+        ];
+
+        let scheduleQuery = this.supabase
+            .from('schedules')
+            .select(
+                'id,owner_id,term,program,year,section,teacher_name,subject,course_year,course_code,units,lec_hours,lab_hours,delivery,building,overload,day,start_time,end_time,room'
+            )
+            .order('created_at', { ascending: true });
+
+        if (!this.isOwner) {
+            scheduleQuery = scheduleQuery.eq('owner_id', syncUserId);
+        }
+
+        const [teachersResult, subjectsResult, roomsResult, coursesResult, schedulesResult] =
+            await Promise.all([
+                ...catalogQueries,
+                scheduleQuery
+            ]);
+
+        if (
+            syncId !== this.syncRequestId ||
+            !this.currentUser ||
+            this.currentUser.id !== syncUserId
+        ) {
+            console.debug('Ignoring stale remote sync.');
+            return;
+        }
+
+        if ((this.ownerViewingUserId || null) !== syncOwnerViewingUserId) {
+            console.debug('Ignoring sync because owner view changed.');
+            return;
+        }
+
+        const catalogResults = {
+            teachers: teachersResult,
+            subjects: subjectsResult,
+            rooms: roomsResult,
+            courses: coursesResult
+        };
+
+        Object.entries(catalogResults).forEach(([table, result]) => {
+            if (result.error) {
+                console.warn(
+                    `Supabase read error for ${table}:`,
+                    result.error.message || result.error
+                );
+                return;
             }
-            const { data: scheduleRows, error: scheduleError } = await this.supabase
-                .from('schedules')
-                .select('id,owner_id,term,program,year,section,teacher_name,subject,course_year,course_code,units,lec_hours,lab_hours,delivery,building,overload,day,start_time,end_time,room')
-                .order('created_at', { ascending: true });
-            if (scheduleError) throw scheduleError;
-            this.schedules = (scheduleRows || []).map(row => ({
+
+            if (!Array.isArray(result.data)) return;
+
+            result.data.forEach(row => {
+                if (!row.owner_id) return;
+
+                if (!this.ownerCatalog[row.owner_id]) {
+                    this.ownerCatalog[row.owner_id] = {
+                        teachers: [],
+                        subjects: [],
+                        rooms: [],
+                        courses: []
+                    };
+                }
+
+                this.ownerCatalog[row.owner_id][table].push(row);
+            });
+        });
+
+        const teachersData = Array.isArray(teachersResult.data)
+            ? teachersResult.data
+            : [];
+
+        const subjectsData = Array.isArray(subjectsResult.data)
+            ? subjectsResult.data
+            : [];
+
+        const roomsData = Array.isArray(roomsResult.data)
+            ? roomsResult.data
+            : [];
+
+        const coursesData = Array.isArray(coursesResult.data)
+            ? coursesResult.data
+            : [];
+
+        const activeCatalogOwnerId =
+            this.isOwner && this.ownerViewingUserId
+                ? this.ownerViewingUserId
+                : syncUserId;
+
+        const activeCatalog =
+            this.ownerCatalog[activeCatalogOwnerId] || {
+                teachers: this.isOwner ? teachersData : [],
+                subjects: this.isOwner ? subjectsData : [],
+                rooms: this.isOwner ? roomsData : [],
+                courses: this.isOwner ? coursesData : []
+            };
+
+        this.teachers = activeCatalog.teachers
+            .map(row => String(row.name || '').toUpperCase())
+            .filter(Boolean);
+
+        this.subjects = activeCatalog.subjects
+            .map(row => String(row.name || '').toUpperCase())
+            .filter(Boolean);
+
+        this.rooms = activeCatalog.rooms
+            .map(row => String(row.name || '').toUpperCase())
+            .filter(Boolean);
+
+        this.courses = activeCatalog.courses
+            .map(row => String(row.name || '').toUpperCase())
+            .filter(Boolean);
+
+        this.subjectDetails = {};
+
+        activeCatalog.subjects.forEach(row => {
+            const name = String(row.name || '').toUpperCase();
+
+            this.subjectDetails[name] = {
+                courseCode: String(row.course_code || '').toUpperCase(),
+                units: Number(row.units) || 0,
+                lecHours: Number(row.lec_hours) || 0,
+                labHours: Number(row.lab_hours) || 0,
+                delivery: String(row.delivery || '').toLowerCase()
+            };
+        });
+
+        this.roomDetails = {};
+
+        activeCatalog.rooms.forEach(row => {
+            const name = String(row.name || '').toUpperCase();
+
+            this.roomDetails[name] = {
+                building: String(row.building || '').toUpperCase()
+            };
+        });
+
+        this.buildings = Array.from(
+            new Set(
+                activeCatalog.rooms
+                    .map(row => String(row.building || '').toUpperCase())
+                    .filter(Boolean)
+            )
+        );
+
+        if (schedulesResult.error) {
+            throw schedulesResult.error;
+        }
+
+        const scheduleRows = Array.isArray(schedulesResult.data)
+            ? schedulesResult.data
+            : [];
+
+        this.schedules = scheduleRows.map(row => {
+            const parsed = this.parseCourseYear(row.course_year);
+
+            return {
                 id: row.id,
-                ownerId: row.owner_id || this.currentUser?.id || '',
+                ownerId: row.owner_id || syncUserId,
                 term: String(row.term || '').toLowerCase(),
-                program: row.program || this.parseCourseYear(row.course_year)?.program || '',
-                year: row.year || this.parseCourseYear(row.course_year)?.year || null,
-                section: row.section || this.parseCourseYear(row.course_year)?.section || '',
+                program: typeof this.normalizeProgram === 'function'
+                    ? this.normalizeProgram(row.program || parsed?.program || '')
+                    : (row.program || parsed?.program || ''),
+
+                year: row.year || parsed?.year || null,
+                section: row.section || parsed?.section || '',
                 teacherName: String(row.teacher_name || '').toUpperCase(),
                 subject: String(row.subject || '').toUpperCase(),
-                courseYear: String(row.course_year || '').toUpperCase(),
+                courseYear: typeof this.normalizeCourseYear === 'function'
+                    ? this.normalizeCourseYear(row.course_year)
+                    : String(row.course_year || '').trim(),
                 courseCode: String(row.course_code || '').toUpperCase(),
                 units: row.units,
                 lecHours: row.lec_hours,
@@ -2874,55 +3605,123 @@ class ScheduleManager {
                 startTime: row.start_time ? row.start_time.slice(0, 5) : '',
                 endTime: row.end_time ? row.end_time.slice(0, 5) : '',
                 room: String(row.room || '').toUpperCase()
-            }));
-            this.ownerAllSchedules = [...this.schedules];
-            // Owners/school admins can read the directory through the protected
-            // profiles policies. Regular members receive no rows here and keep
-            // the owner console hidden.
-            const { data: profiles, error: profileError } = await this.supabase
-                .from('profiles')
-                .select('id,email,full_name,department,role,created_at')
-                .order('created_at', { ascending: true });
-            if (!profileError && Array.isArray(profiles)) {
-                this.ownerProfiles = profiles;
-                const own = profiles.find(profile => profile.id === this.currentUser?.id);
-                this.currentProfile = own || null;
-                this.isOwner = ['owner', 'school_admin'].includes(String(own?.role || '').toLowerCase());
-                const shell = document.getElementById('appShell');
-                if (shell) shell.classList.toggle('owner-mode', this.isOwner);
-                if (this.isOwner) {
-                    document.querySelectorAll('.toggle-btn').forEach(btn => btn.classList.remove('active'));
-                    document.querySelectorAll('.view-content').forEach(panel => panel.classList.remove('active'));
-                    document.getElementById('ownerView')?.classList.add('active');
-                    const rememberedUser = this.pendingOwnerViewingUserId && this.ownerProfiles.some(profile => profile.id === this.pendingOwnerViewingUserId && !['owner', 'school_admin'].includes(String(profile.role || '').toLowerCase()))
-                        ? this.pendingOwnerViewingUserId : null;
-                    if (rememberedUser) {
-                        this.pendingOwnerViewingUserId = null;
-                        this.selectOwnerUser(rememberedUser);
-                    }
-                }
-                if (!this.isOwner) this.resetToMemberStartView();
+            };
+        });
+
+        this.ownerAllSchedules = [...this.schedules];
+
+        if (this.isOwner && this.ownerViewingUserId) {
+            this.schedules = this.ownerAllSchedules.filter(
+                schedule => schedule.ownerId === this.ownerViewingUserId
+            );
+        }
+
+        const shell = document.getElementById('appShell');
+
+        if (shell) {
+            shell.classList.toggle('owner-mode', this.isOwner);
+            shell.classList.toggle(
+                'owner-user-mode',
+                this.isOwner && !!this.ownerViewingUserId
+            );
+        }
+
+        if (this.isOwner) {
+            document.querySelectorAll('.toggle-btn').forEach(btn =>
+                btn.classList.remove('active')
+            );
+
+            document.querySelectorAll('.view-content').forEach(panel =>
+                panel.classList.remove('active')
+            );
+
+            if (this.ownerViewingUserId) {
+                document.getElementById('teacherView')?.classList.add('active');
             } else {
-                this.ownerProfiles = [];
-                this.currentProfile = null;
-                this.isOwner = false;
-                this.resetToMemberStartView();
+                document.getElementById('ownerView')?.classList.add('active');
             }
-            this.saveSchedules();
-            // re-render lists
-            this.renderSubjectOptions();
-            this.renderTeacherOptions();
-            this.renderRoomOptions();
-            this.renderBuildingOptions();
-            this.renderRoomBuildingOptions();
-            this.renderCourseOptions();
-            this.renderSectionScheduleOptions();
-            this.checkPrereqs();
-            this.render();
-            this.showNotification('Remote sync complete.', 'success');
+        } else {
+            this.resetToMemberStartView();
+        }
+
+        if (this.isOwner && !this.ownerViewingUserId) {
+            const rememberedUser =
+                this.pendingOwnerViewingUserId &&
+                this.ownerProfiles.some(
+                    profile =>
+                        profile.id === this.pendingOwnerViewingUserId &&
+                        !['owner', 'school_admin'].includes(
+                            String(profile.role || '').toLowerCase()
+                        )
+                )
+                    ? this.pendingOwnerViewingUserId
+                    : null;
+
+            if (rememberedUser) {
+                this.pendingOwnerViewingUserId = null;
+
+                this.ownerViewingUserId = rememberedUser;
+                this.ownerSelectedUserId = rememberedUser;
+
+                sessionStorage.setItem(
+                    'scheduleStudioOwnerUser',
+                    rememberedUser
+                );
+
+                this.schedules = this.ownerAllSchedules.filter(
+                    schedule => schedule.ownerId === rememberedUser
+                );
+
+                await this.loadOwnerCatalog(rememberedUser);
+
+                if (
+                    syncId !== this.syncRequestId ||
+                    !this.currentUser ||
+                    this.currentUser.id !== syncUserId
+                ) {
+                    return;
+                }
+
+                shell?.classList.remove('owner-mode');
+                shell?.classList.add('owner-user-mode');
+
+                document.getElementById('ownerView')?.classList.remove('active');
+                document.getElementById('teacherView')?.classList.add('active');
+
+                document
+                    .querySelectorAll('.toggle-btn')
+                    .forEach(btn => btn.classList.remove('active'));
+
+                document
+                    .querySelector('.toggle-btn[data-view="teacher"]')
+                    ?.classList.add('active');
+            }
+        }
+        this.ensureUniqueSubjectColors();
+
+        this.renderSubjectOptions();
+        this.renderTeacherOptions();
+        this.renderRoomOptions();
+        this.renderBuildingOptions();
+        this.renderRoomBuildingOptions();
+        this.renderCourseOptions();
+        this.renderSectionScheduleOptions();
+        this.checkPrereqs();
+        this.render();
+
+        this.showNotification('Remote sync complete.', 'success');
+
         } catch (err) {
+            if (syncId !== this.syncRequestId) {
+                console.debug('Ignoring error from stale sync.');
+                return;
+            }
+
             console.error('Sync failed', err);
-            this.showNotification('Remote sync failed. See console.', 'error');
+            this.showNotification(
+                'Remote sync failed. See console.',
+                'error'
+            );
         }
     }
 
@@ -2937,15 +3736,43 @@ class ScheduleManager {
 
     async addListItemToRemote(table, item) {
         if (!this.remoteEnabled) return true;
+
         if (!this.currentUser) {
             this.showNotification('Please sign in before adding items.', 'error');
             return false;
         }
+
         const payload = typeof item === 'string' ? { name: item } : item;
-        if (this.ownerViewingUserId && ['teachers', 'subjects', 'rooms', 'courses'].includes(table)) payload.owner_id = this.ownerViewingUserId;
+
+        if (
+            this.ownerViewingUserId &&
+            ['teachers', 'subjects', 'rooms', 'courses'].includes(table)
+        ) {
+            payload.owner_id = this.ownerViewingUserId;
+        }
+
         const { error } = await this.supabase.from(table).insert(payload);
+
         if (!error) return true;
-        this.showNotification(error.message || `Unable to save ${payload.name}.`, 'error');
+
+        // The item may already exist in Supabase even though
+        // the local list is missing it.
+        if (
+            table === 'courses' &&
+            error.code === '23505' &&
+            String(error.message || '').includes('courses_owner_id_name_key')
+        ) {
+            console.warn(
+                `Course "${payload.name}" already exists remotely. Continuing.`
+            );
+            return true;
+        }
+
+        this.showNotification(
+            error.message || `Unable to save ${payload.name}.`,
+            'error'
+        );
+
         return false;
     }
 
