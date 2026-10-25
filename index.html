@@ -3,9 +3,9 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>COE Schedule Studio</title>
+    <title>Schedule Studio</title>
     <link rel="stylesheet" href="style.css">
-    <link rel="icon" href="assets/logo.png">
+    <link rel="icon" href="assets/schedule-studio-mark.svg" type="image/svg+xml">
 </head>
 <body>
     <main id="authScreen" class="auth-screen" aria-live="polite">
@@ -149,59 +149,55 @@
     </div>
 
     <div id="appShell" class="container hidden">
-        <header class="app-header">
-            <div class="brand">
-                <img src="assets/logo.png" alt="College of Engineering logo" class="header-logo">
-                <div>
-                    <p class="eyebrow">COLLEGE OF ENGINEERING</p>
-                    <h1>SCHEDULE STUDIO</h1>
-                    <p class="header-subtitle">Build conflict-free class schedules with confidence.</p>
-                </div>
+        <aside class="app-sidebar" aria-label="Schedule Studio navigation">
+            <div class="sidebar-brand">
+                <img src="assets/schedule-studio-mark.svg" alt="" class="header-logo">
+                <h1>SCHEDULE STUDIO</h1>
             </div>
-            <div id="remoteControls" class="remote-controls">
-
-                <div id="userIdentity" class="remote-status hidden"></div>
-
+            <p class="sidebar-section-label">WORKSPACE</p>
+            <nav class="view-toggle main-navigation" aria-label="Workspace views">
+                <button class="toggle-btn active" data-view="teacher">DRAFT SCHEDULE</button>
+                <button class="toggle-btn" data-view="manage">MANAGE LISTS</button>
+                <button class="toggle-btn" data-view="all">TEACHERS SCHEDULE</button>
+                <button class="toggle-btn" data-view="students">STUDENTS SCHEDULE</button>
+                <button class="toggle-btn" data-view="rooms">ROOM ASSIGNMENT</button>
+            </nav>
+            <section class="sidebar-period" aria-label="Active scheduling period">
+                <p class="sidebar-section-label">ACTIVE PERIOD</p>
                 <div
                     id="activeSchedulePeriodHeader"
                     class="active-schedule-period-header hidden">
                 </div>
-
-                <button
-                    id="ownerBackToUsers"
-                    type="button"
-                    class="btn-clear owner-back-btn hidden">
-                    ←
-                </button>
-                <button
-                    id="changeSchedulePeriodBtn"
-                    type="button"
-                    class="btn-clear change-schedule-period-btn">
-                    ←
-                </button>
-
+                <div id="remoteControls" class="remote-controls">
+                    <button
+                        id="ownerBackToUsers"
+                        type="button"
+                        class="btn-clear owner-back-btn hidden">
+                        ← Back to users
+                    </button>
+                    <button
+                        id="changeSchedulePeriodBtn"
+                        type="button"
+                        class="btn-clear change-schedule-period-btn">
+                        ← Change Period
+                    </button>
+                </div>
+            </section>
+            <div class="sidebar-account">
+                <div id="userIdentity" class="remote-status hidden"></div>
                 <button
                     id="signOutBtn"
                     class="btn-view btn-compact hidden">
                     Sign out
                 </button>
-
             </div>
-        </header>
+        </aside>
 
         <section class="dashboard" aria-label="Schedule overview">
             <div class="stat-card"><span class="stat-label">Scheduled classes</span><strong id="scheduleCount">0</strong><span class="stat-note">Across the week</span></div>
             <div class="stat-card"><span class="stat-label">Active teachers</span><strong id="teacherCount">0</strong><span class="stat-note">With a class assignment</span></div>
             <div class="stat-card"><span class="stat-label">Rooms in use</span><strong id="roomCount">0</strong><span class="stat-note">Assigned this term</span></div>
         </section>
-
-        <nav class="view-toggle main-navigation" aria-label="Workspace views">
-            <button class="toggle-btn active" data-view="teacher">DRAFT SCHEDULE</button>
-            <button class="toggle-btn" data-view="manage">MANAGE LISTS</button>
-            <button class="toggle-btn" data-view="all">TEACHERS SCHEDULE</button>
-            <button class="toggle-btn" data-view="students">STUDENTS SCHEDULE</button>
-            <button class="toggle-btn" data-view="rooms">ROOM ASSIGNMENT</button>
-        </nav>
 
         <div class="main-content">
             <!-- Left Panel: Form -->
@@ -321,6 +317,7 @@
                     <div id="teacherList" class="teacher-list">
                         <p class="empty-message">No schedules yet. Add one to get started!</p>
                     </div>
+                    <div id="teacherPagination"></div>
                 </div>
 
                 <!-- All Schedules View -->

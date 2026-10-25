@@ -14,6 +14,7 @@ class ScheduleManager {
         this.schedulePeriods = [];
         this.activeSchedulePeriod = null;
         this.workspaceScreenVisible = false;
+        this.screenTransitionTimeout = null;
         this.currentProfile = null;
         this.isOwner = false;
         this.ownerProfiles = [];
@@ -52,6 +53,7 @@ class ScheduleManager {
         };
 
         this.itemsPerPage = 3;
+        this.teacherSchedulesPerPage = 10;
         this.pendingOwnerViewingUserId = sessionStorage.getItem('scheduleStudioOwnerUser') || null;
         this.buildings = Array.from(new Set([...this.buildings, ...Object.values(this.roomDetails).map(info => info && info.building).filter(Boolean)]));
         this.subjectColors = this.loadSubjectColors();
@@ -160,6 +162,7 @@ class ScheduleManager {
         });
         document.getElementById('teacherViewSearch')?.addEventListener('input', e => {
             this.teacherViewSearch = e.target.value.trim().toLowerCase();
+            if (this.pagination) this.resetPage('teacher');
             this.renderTeacherView();
         });
         document.getElementById('teacherScheduleSearch')?.addEventListener('input', e => {
@@ -1434,7 +1437,10 @@ class ScheduleManager {
     // ==================== PAGINATION ====================
 
     getPaginatedItems(items, pageKey) {
-        const totalPages = Math.max(1, Math.ceil(items.length / this.itemsPerPage));
+        const pageSize = pageKey === 'teacher'
+            ? this.teacherSchedulesPerPage
+            : this.itemsPerPage;
+        const totalPages = Math.max(1, Math.ceil(items.length / pageSize));
 
         // Keep the current page valid if items were deleted or filtered.
         this.pagination[pageKey] = Math.min(
@@ -1443,8 +1449,8 @@ class ScheduleManager {
         );
 
         const currentPage = this.pagination[pageKey];
-        const start = (currentPage - 1) * this.itemsPerPage;
-        const end = start + this.itemsPerPage;
+        const start = (currentPage - 1) * pageSize;
+        const end = start + pageSize;
 
         return {
             items: items.slice(start, end),
@@ -1470,9 +1476,12 @@ class ScheduleManager {
     }
 
     renderPagination(pageKey, totalItems) {
-        if (totalItems <= this.itemsPerPage) return '';
+        const pageSize = pageKey === 'teacher'
+            ? this.teacherSchedulesPerPage
+            : this.itemsPerPage;
+        if (totalItems <= pageSize) return '';
 
-        const totalPages = Math.ceil(totalItems / this.itemsPerPage);
+        const totalPages = Math.ceil(totalItems / pageSize);
         const currentPage = Math.min(
             Math.max(1, this.pagination[pageKey] || 1),
             totalPages
@@ -1480,9 +1489,9 @@ class ScheduleManager {
 
         this.pagination[pageKey] = currentPage;
 
-        const startItem = (currentPage - 1) * this.itemsPerPage + 1;
+        const startItem = (currentPage - 1) * pageSize + 1;
         const endItem = Math.min(
-            currentPage * this.itemsPerPage,
+            currentPage * pageSize,
             totalItems
         );
 
@@ -1563,33 +1572,47 @@ class ScheduleManager {
 
     renderTeacherView() {
         const teacherList = document.getElementById('teacherList');
+        const teacherPagination = document.getElementById('teacherPagination');
         const uniqueTeachers = [...new Set(this.schedules.map(s => s.teacherName))]
             .filter(teacherName => teacherName.toLowerCase().includes(this.teacherViewSearch));
         if (this.schedules.length === 0) {
             teacherList.innerHTML = '<div class="welcome-state"><span class="welcome-kicker">WELCOME</span><h3>Your scheduling workspace is ready.</h3><p>Create your first class assignment using the scheduler, or open Manage Lists to set up your teachers, subjects, sections, buildings, and rooms.</p></div>';
+            if (teacherPagination) teacherPagination.innerHTML = '';
             return;
         }
         if (uniqueTeachers.length === 0) {
             teacherList.innerHTML = '<p class="empty-message">No teachers match your search.</p>';
+            if (teacherPagination) teacherPagination.innerHTML = '';
             return;
         }
 
-        // Build teacher + term groups first so each card stays together.
-        const teacherGroups = uniqueTeachers.flatMap(teacherName => {
+        const teacherSchedules = uniqueTeachers.flatMap(teacherName => {
             const terms = [...new Set(this.getTeacherSchedules(teacherName).map(schedule => schedule.term || ''))]
                 .sort((a, b) => this.compareTerms(a, b));
 
-            return terms.map(term => ({
-                teacherName,
-                term
-            }));
+            return terms.flatMap(term =>
+                this.getTeacherSchedules(teacherName, term).map(schedule => ({
+                    teacherName,
+                    term,
+                    schedule
+                }))
+            );
         });
 
-        // Paginate teacher cards, not individual schedule rows.
-        const teacherPage = this.getPaginatedItems(teacherGroups, 'teacher');
+        const teacherPage = this.getPaginatedItems(teacherSchedules, 'teacher');
+        const pageTeacherGroups = [];
+        teacherPage.items.forEach(item => {
+            let group = pageTeacherGroups.find(
+                entry => entry.teacherName === item.teacherName && entry.term === item.term
+            );
+            if (!group) {
+                group = { teacherName: item.teacherName, term: item.term, schedules: [] };
+                pageTeacherGroups.push(group);
+            }
+            group.schedules.push(item.schedule);
+        });
 
-        teacherList.innerHTML = teacherPage.items.map(({ teacherName, term }) => {
-            const teacherSchedules = this.getTeacherSchedules(teacherName, term);
+        teacherList.innerHTML = pageTeacherGroups.map(({ teacherName, term, schedules }) => {
             const conflicts = this.getTeacherConflicts(teacherName, term);
             const hasConflict = conflicts.length > 0;
 
@@ -1597,7 +1620,6 @@ class ScheduleManager {
                 <div class="teacher-card ${hasConflict ? 'has-conflict' : ''}">
                     <div class="teacher-name">
                         ${teacherName}
-                        <span class="term-badge">${this.formatTerm(term)}</span>
                         ${hasConflict ? '<span class="conflict-badge">⚠️ CONFLICT</span>' : ''}
                     </div>
 
@@ -1620,7 +1642,7 @@ class ScheduleManager {
                         </thead>
 
                         <tbody>
-                            ${teacherSchedules.map(schedule => {
+                            ${schedules.map(schedule => {
                                 const isConflicted = conflicts.some(
                                     c => c.schedule1.id === schedule.id || c.schedule2.id === schedule.id
                                 );
@@ -1651,11 +1673,12 @@ class ScheduleManager {
             `;
         }).join('');
 
-        // Add pagination controls underneath the teacher cards.
-        teacherList.insertAdjacentHTML(
-            'beforeend',
-            this.renderPagination('teacher', teacherPage.totalItems)
-        );
+        if (teacherPagination) {
+            teacherPagination.innerHTML = this.renderPagination(
+                'teacher',
+                teacherPage.totalItems
+            );
+        }
     }
 
     renderAllView() {
@@ -1701,7 +1724,6 @@ class ScheduleManager {
                     <div class="student-section-header">
                         <div class="teacher-name">
                             ${teacherName}
-                            <span class="term-badge">${this.formatTerm(term)}</span>
                             ${hasConflict ? '<span class="conflict-badge">⚠️ CONFLICT</span>' : ''}
                         </div>
 
@@ -1856,11 +1878,9 @@ class ScheduleManager {
             const safeTerm = term.replace(/\\/g, '\\\\').replace(/'/g, "\\'");
             return `
                 <div class="teacher-card student-section-card">
-
                     <div class="student-section-header">
                         <div class="teacher-name">
                             ${section}
-                            <span class="term-badge">${this.formatTerm(term)}</span>
                         </div>
 
                         <button
@@ -1879,7 +1899,6 @@ class ScheduleManager {
                             <td>${this.formatTime(schedule.startTime)} - ${this.formatTime(schedule.endTime)}</td><td>${schedule.room}</td></tr>
                         `).join('')}</tbody>
                     </table>
-                    
                 </div>
             `;
         }).join('');
@@ -1950,7 +1969,6 @@ class ScheduleManager {
                 <div class="student-section-header">
                     <div class="teacher-name">
                         ${this.escapeHtml(group.room)}
-                        <span class="term-badge">${this.formatTerm(group.term)}</span>
                     </div>
 
                     <button
@@ -1963,7 +1981,6 @@ class ScheduleManager {
                 </div>
                 <table class="schedule-table full-table"><thead><tr><th>Subject</th><th>Course &amp; Year</th><th>Teacher</th><th>Day</th><th>Time</th></tr></thead>
                 <tbody>${logicalSchedules.map(schedule => `<tr><td>${this.escapeHtml(schedule.subject)}</td><td>${this.escapeHtml(schedule.displayCourseYear)}</td><td>${this.escapeHtml(schedule.teacherName)}</td><td>${this.escapeHtml(schedule.day)}</td><td>${this.formatTime(schedule.startTime)} - ${this.formatTime(schedule.endTime)}</td></tr>`).join('')}</tbody></table>
-                
             </div>`;
         }).join('');
         list.insertAdjacentHTML(
@@ -5172,6 +5189,7 @@ class ScheduleManager {
             this.schedules = [];
             this.ownerAllSchedules = [];
         }
+        if (this.pagination) this.resetPage('teacher');
 
         this.activeSchedulePeriod = period;
         this.term = period.term;
@@ -5444,6 +5462,21 @@ class ScheduleManager {
         this.workspaceScreenVisible = show;
 
         if (show) {
+            if (!appShell.classList.contains('hidden')) {
+                if (
+                    workspaceScreen.classList.contains('screen-enter-left') &&
+                    appShell.classList.contains('screen-exit-right')
+                ) return;
+
+                this.transitionWorkspaceScreens(
+                    appShell,
+                    workspaceScreen,
+                    'right',
+                    'left'
+                );
+                return;
+            }
+
             workspaceScreen.classList.remove('hidden');
             appShell.classList.add('hidden');
             const transitionFromAuth =
@@ -5471,6 +5504,7 @@ class ScheduleManager {
                 }, 700);
             }
         } else {
+            this.cancelWorkspaceScreenTransition();
             workspaceScreen.classList.add('hidden');
             workspaceScreen.classList.remove(
                 'workspace-transition-in',
@@ -5481,6 +5515,62 @@ class ScheduleManager {
                 'workspace-transition-active'
             );
         }
+    }
+
+    cancelWorkspaceScreenTransition() {
+        if (this.screenTransitionTimeout) {
+            window.clearTimeout(this.screenTransitionTimeout);
+            this.screenTransitionTimeout = null;
+        }
+
+        ['workspaceScreen', 'appShell'].forEach(id => {
+            document.getElementById(id)?.classList.remove(
+                'screen-transition-layer',
+                'screen-exit-left',
+                'screen-exit-right',
+                'screen-enter-left',
+                'screen-enter-right',
+                'screen-transition-active'
+            );
+        });
+    }
+
+    transitionWorkspaceScreens(fromScreen, toScreen, exitDirection, enterDirection) {
+        this.cancelWorkspaceScreenTransition();
+
+        fromScreen.classList.remove('hidden');
+        toScreen.classList.remove('hidden');
+        fromScreen.classList.add(
+            'screen-transition-layer',
+            `screen-exit-${exitDirection}`
+        );
+        toScreen.classList.add(
+            'screen-transition-layer',
+            `screen-enter-${enterDirection}`
+        );
+
+        void toScreen.offsetWidth;
+        requestAnimationFrame(() => {
+            requestAnimationFrame(() => {
+                fromScreen.classList.add('screen-transition-active');
+                toScreen.classList.add('screen-transition-active');
+            });
+        });
+
+        this.screenTransitionTimeout = window.setTimeout(() => {
+            fromScreen.classList.add('hidden');
+            fromScreen.classList.remove(
+                'screen-transition-layer',
+                `screen-exit-${exitDirection}`,
+                'screen-transition-active'
+            );
+            toScreen.classList.remove(
+                'screen-transition-layer',
+                `screen-enter-${enterDirection}`,
+                'screen-transition-active'
+            );
+            this.screenTransitionTimeout = null;
+        }, 450);
     }
 
     changeSchedulePeriod() {
@@ -5523,10 +5613,23 @@ class ScheduleManager {
             authScreen.classList.add('hidden');
         }
 
-        if (workspaceScreen) {
-            workspaceScreen.classList.add('hidden');
+        if (workspaceScreen && !workspaceScreen.classList.contains('hidden')) {
+            if (
+                appShell.classList.contains('screen-enter-right') &&
+                workspaceScreen.classList.contains('screen-exit-left')
+            ) return;
+
+            this.transitionWorkspaceScreens(
+                workspaceScreen,
+                appShell,
+                'left',
+                'right'
+            );
+            return;
         }
 
+        this.cancelWorkspaceScreenTransition();
+        workspaceScreen?.classList.add('hidden');
         appShell.classList.remove('hidden');
     }
 

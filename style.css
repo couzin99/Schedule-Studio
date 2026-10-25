@@ -1965,6 +1965,492 @@ body, .container { background-color:#f5f6f8; }
     }
 }
 
+/* Full-width workspace shell with period context in the sidebar */
+#appShell.container {
+    grid-template-columns: 250px minmax(0, 1fr);
+    grid-template-rows: auto minmax(0, 1fr);
+    grid-template-areas:
+        "sidebar dashboard"
+        "sidebar content";
+    align-items: start;
+    width: 100%;
+    max-width: none;
+    min-height: 100vh;
+    min-height: 100dvh;
+    margin: 0;
+    padding: 0;
+    overflow: visible;
+    border: 0;
+    border-radius: 0;
+    background: #fff;
+    box-shadow: none;
+}
+
+#appShell > .app-sidebar {
+    grid-area: sidebar;
+    grid-row: 1 / span 2;
+    position: sticky;
+    top: 0;
+    width: 250px;
+    height: 100vh;
+    height: 100dvh;
+    min-height: 0;
+    padding: 22px 14px 16px;
+    border: 0;
+    border-right: 1px solid #ece8e4;
+    border-radius: 0;
+    background: #fff;
+    box-shadow: none;
+}
+
+#appShell .sidebar-period {
+    margin-top: 27px;
+    padding: 16px 8px;
+    border-top: 1px solid #eee9e5;
+    border-bottom: 1px solid #eee9e5;
+}
+
+#appShell .sidebar-period .sidebar-section-label {
+    margin: 0 0 9px;
+}
+
+#appShell .sidebar-period .active-schedule-period-header {
+    padding: 0;
+    border: 0;
+    border-radius: 0;
+    background: transparent;
+    color: #35312f;
+    font-size: .87rem;
+    font-weight: 750;
+    line-height: 1.5;
+    white-space: normal;
+}
+
+#appShell .sidebar-period .remote-controls {
+    display: grid;
+    justify-content: stretch;
+    gap: 8px;
+    margin-top: 12px;
+}
+
+#appShell .sidebar-period #changeSchedulePeriodBtn,
+#appShell .sidebar-period .owner-back-btn {
+    justify-content: flex-start;
+    width: 100%;
+    min-height: 38px;
+    padding: 8px 10px !important;
+    border-color: #eadbd2;
+    border-radius: 9px;
+    background: #fff;
+    color: #8c5840;
+    font-size: .76rem !important;
+}
+
+#appShell .sidebar-period #changeSchedulePeriodBtn:hover,
+#appShell .sidebar-period .owner-back-btn:hover {
+    border-color: #d9815b;
+    background: #fff5ee;
+    color: #874b33;
+}
+
+#appShell .sidebar-account {
+    margin-top: auto;
+}
+
+#appShell > .dashboard {
+    grid-area: dashboard;
+    grid-column: 2;
+    grid-row: 1;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    width: 100%;
+    padding: 24px 32px 0;
+}
+
+#appShell > .main-content {
+    grid-area: content;
+    grid-column: 2;
+    grid-row: 2;
+    grid-template-columns: minmax(340px, .72fr) minmax(0, 1.45fr);
+    align-items: start;
+    gap: 24px;
+    width: 100%;
+    min-width: 0;
+    margin: 0;
+    padding: 24px 32px 36px;
+}
+
+#appShell .form-panel,
+#appShell .display-panel {
+    min-width: 0;
+    padding: 0;
+    border: 0;
+    border-radius: 0;
+    background: transparent;
+    box-shadow: none;
+}
+
+#appShell .form-panel {
+    position: static;
+    top: auto;
+}
+
+#appShell .form-panel .panel-heading,
+#appShell #teacherView .view-heading,
+#appShell #allView .view-heading,
+#appShell #studentsView .view-heading,
+#appShell #roomsView .view-heading,
+#appShell #manageView .view-heading,
+#appShell #ownerView .view-heading {
+    align-items: center;
+    margin-bottom: 18px;
+}
+
+#appShell .view-heading h2,
+#appShell .form-panel h2 {
+    margin: 0;
+    padding: 0;
+    border: 0;
+    color: #30302f !important;
+    font-size: 1.35rem;
+    letter-spacing: -.025em;
+}
+
+#appShell .view-content.active > br {
+    display: none;
+}
+
+#appShell .display-panel {
+    width: 100%;
+}
+
+#appShell #teacherView.active .view-heading {
+    margin-bottom: 16px;
+}
+
+#appShell #teacherList {
+    display: grid;
+    width: 100%;
+    gap: 14px;
+}
+
+#appShell .teacher-card,
+#appShell .student-section-card,
+#appShell #roomAssignmentList > * {
+    width: 100%;
+    max-width: none;
+}
+
+#appShell #allSchedules,
+#appShell #studentSectionList,
+#appShell #roomAssignmentList {
+    width: 100%;
+    max-width: none;
+}
+
+#appShell #studentSectionList {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    gap: 12px;
+}
+
+#appShell #allView .teacher-card {
+    padding: 18px 20px;
+    border: 1px solid #eae5e0;
+    border-left: 3px solid #d9815b;
+    border-radius: 12px;
+    background: #fff;
+    box-shadow: 0 3px 12px rgba(51,43,37,.035);
+}
+
+#appShell #teacherView .teacher-card {
+    padding: 18px;
+    border: 1px solid #eae5e0;
+    border-left: 3px solid #d9815b;
+    border-radius: 12px;
+    background: #fff;
+    box-shadow: 0 3px 12px rgba(51,43,37,.035);
+}
+
+#appShell .schedule-table,
+#appShell .schedule-table.full-table {
+    width: 100%;
+    table-layout: auto;
+}
+
+#appShell .schedule-table th,
+#appShell .schedule-table td {
+    padding: 10px 12px;
+    white-space: nowrap;
+}
+
+#appShell .schedule-table th:first-child,
+#appShell .schedule-table td:first-child {
+    white-space: normal;
+}
+
+#appShell .student-section-card {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 20px;
+    padding: 18px 20px;
+    border: 1px solid #eae5e0;
+    border-left: 3px solid #d9815b;
+    border-radius: 12px;
+    background: #fff;
+    box-shadow: 0 3px 12px rgba(51,43,37,.035);
+}
+
+#appShell .student-section-card .btn-view,
+#appShell #allView .student-view-timetable {
+    flex: 0 0 auto;
+    margin: 0;
+    background: #fff4ec;
+    border: 1px solid #ead2c2;
+    box-shadow: none;
+    color: #94583d;
+}
+
+#appShell .student-section-card .btn-view:hover,
+#appShell #allView .student-view-timetable:hover {
+    background: #fce9dc;
+    color: #80472f;
+}
+
+#appShell .main-content.all-view-active,
+#appShell .main-content.manage-view-active {
+    grid-template-columns: minmax(0, 1fr);
+}
+
+#appShell .main-content.all-view-active .form-panel,
+#appShell .main-content.manage-view-active .form-panel {
+    display: none;
+}
+
+#appShell .main-content.all-view-active .display-panel,
+#appShell .main-content.manage-view-active .display-panel {
+    grid-column: 1 / -1;
+    width: 100%;
+}
+
+#appShell .pagination {
+    border-color: #ece5df;
+}
+
+#appShell .pagination-btn {
+    border-color: #e4d7cd;
+    color: #89543b;
+}
+
+#appShell .pagination-btn:hover:not(:disabled) {
+    border-color: #d9815b;
+    background: #fff4ec;
+    color: #80472f;
+}
+
+#appShell .pagination-page {
+    color: #594a40;
+}
+
+@media (max-width: 1120px) {
+    #appShell > .dashboard {
+        padding-right: 24px;
+        padding-left: 24px;
+    }
+
+    #appShell > .main-content {
+        grid-template-columns: minmax(310px, .7fr) minmax(0, 1.3fr);
+        gap: 18px;
+        padding-right: 24px;
+        padding-left: 24px;
+    }
+}
+
+@media (max-width: 850px) {
+    #appShell.container {
+        display: flex;
+        flex-direction: column;
+        min-height: 100vh;
+        min-height: 100dvh;
+    }
+
+    #appShell > .app-sidebar {
+        position: static;
+        width: 100%;
+        height: auto;
+        min-height: 0;
+        padding: 12px 20px;
+        border-right: 0;
+        border-bottom: 1px solid #ece8e4;
+    }
+
+    #appShell .sidebar-period {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        margin-top: 12px;
+        padding: 12px 0 0;
+    }
+
+    #appShell .sidebar-period .sidebar-section-label {
+        margin: 0;
+        white-space: nowrap;
+    }
+
+    #appShell .sidebar-period .active-schedule-period-header {
+        flex: 1 1 auto;
+    }
+
+    #appShell .sidebar-period .remote-controls {
+        display: flex;
+        margin-top: 0;
+    }
+
+    #appShell .sidebar-period #changeSchedulePeriodBtn,
+    #appShell .sidebar-period .owner-back-btn {
+        width: auto;
+    }
+
+    #appShell .sidebar-account {
+        grid-template-columns: minmax(0, 1fr) auto;
+        align-items: center;
+        margin-top: 12px;
+    }
+
+    #appShell > .dashboard {
+        grid-column: auto;
+        grid-row: auto;
+        width: 100%;
+        padding: 20px 22px 0;
+    }
+
+    #appShell > .main-content {
+        grid-column: auto;
+        grid-row: auto;
+        width: 100%;
+        grid-template-columns: minmax(0, 1fr);
+        padding: 22px;
+    }
+
+    #appShell .main-content.all-view-active .display-panel,
+    #appShell .main-content.manage-view-active .display-panel {
+        grid-column: auto;
+    }
+}
+
+@media (max-width: 600px) {
+    #appShell > .app-sidebar {
+        padding: 11px 14px;
+    }
+
+    #appShell .sidebar-brand {
+        padding-bottom: 12px;
+    }
+
+    #appShell .sidebar-period {
+        flex-wrap: wrap;
+        gap: 8px;
+    }
+
+    #appShell .sidebar-period .sidebar-section-label {
+        flex-basis: 100%;
+    }
+
+    #appShell .sidebar-period .active-schedule-period-header {
+        flex-basis: 100%;
+    }
+
+    #appShell .sidebar-period .remote-controls {
+        width: 100%;
+    }
+
+    #appShell .sidebar-period #changeSchedulePeriodBtn,
+    #appShell .sidebar-period .owner-back-btn {
+        width: 100%;
+    }
+
+    #appShell > .dashboard {
+        grid-template-columns: minmax(0, 1fr);
+        gap: 8px;
+        padding: 14px 14px 0;
+    }
+
+    #appShell .stat-card {
+        min-height: 86px;
+        padding: 11px;
+    }
+
+    #appShell .stat-label {
+        font-size: .62rem;
+    }
+
+    #appShell .stat-note {
+        font-size: .66rem;
+    }
+
+    #appShell > .main-content {
+        gap: 20px;
+        padding: 18px 14px 28px;
+    }
+
+    #appShell .student-section-card {
+        align-items: flex-start;
+        flex-direction: column;
+    }
+
+    #appShell .schedule-table {
+        display: block;
+        overflow-x: auto;
+    }
+}
+
+#appShell .student-section-card,
+#appShell .room-assignment-card {
+    display: block;
+}
+
+#appShell .student-section-card .student-section-header,
+#appShell .room-assignment-card .student-section-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+    width: 100%;
+    margin: 0 0 14px;
+    padding: 0 0 12px;
+    border-bottom: 1px solid #f0e7e1;
+}
+
+#appShell .student-section-card .student-section-header .teacher-name,
+#appShell .room-assignment-card .student-section-header .teacher-name {
+    min-width: 0;
+    margin: 0;
+    font-size: 1.05rem;
+    font-weight: 750;
+    line-height: 1.4;
+}
+
+#appShell .student-section-card .student-section-header .student-view-timetable,
+#appShell .room-assignment-card .student-section-header .student-view-timetable {
+    flex: 0 0 auto;
+    margin: 0;
+}
+
+#appShell .student-section-card > .schedule-table,
+#appShell .room-assignment-card > .schedule-table {
+    display: table;
+    width: 100%;
+    margin: 0;
+}
+
+@media (max-width: 600px) {
+    #appShell .student-section-card > .schedule-table,
+    #appShell .room-assignment-card > .schedule-table {
+        display: block;
+        overflow-x: auto;
+    }
+}
+
 @media (prefers-reduced-motion: reduce) {
     #authScreen.workspace-transition-out,
     #workspaceScreen.workspace-transition-in {
@@ -2692,4 +3178,1019 @@ body { background:#fbf7f2; color:#3f2024; }
 
 .subject-option-exception span {
     color: #8f1720;
+}
+
+/* Schedule Studio application shell */
+body {
+    padding: 0;
+    background: #fff;
+    color: #35312f;
+}
+
+#appShell.container {
+    display: grid;
+    grid-template-columns: 252px minmax(0, 1fr);
+    grid-template-rows: auto auto auto;
+    grid-template-areas:
+        "sidebar header"
+        "sidebar dashboard"
+        "sidebar content";
+    align-content: start;
+    gap: 0;
+    width: 100%;
+    max-width: none;
+    min-height: 100vh;
+    min-height: 100dvh;
+    margin: 0;
+    padding: 0;
+    overflow: visible;
+    border: 0;
+    border-radius: 0;
+    background: #fff;
+    box-shadow: none;
+}
+
+#appShell > .app-header {
+    grid-area: header;
+    position: relative;
+    z-index: 10;
+    display: flex;
+    justify-content: flex-end;
+    align-items: center;
+    gap: 20px;
+    min-width: 0;
+    min-height: 78px;
+    margin: 0;
+    padding: 16px 30px;
+    border: 0;
+    border-bottom: 1px solid #eee6e0;
+    border-radius: 0;
+    background: #fff;
+    box-shadow: none;
+    text-align: left;
+}
+
+#appShell .header-logo {
+    flex: 0 0 auto;
+    width: 48px;
+    height: 48px;
+    margin: 0;
+    padding: 0;
+    border: 0;
+    border-radius: 14px;
+    background: transparent;
+    box-shadow: none;
+    object-fit: contain;
+}
+
+#appShell #remoteControls {
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 9px;
+    min-width: 0;
+}
+
+#appShell #activeSchedulePeriodHeader {
+    padding: 9px 13px;
+    border: 1px solid #f0dfd2;
+    border-radius: 999px;
+    background: #fff3e9;
+    color: #9e5b40;
+    font-size: .82rem;
+    font-weight: 750;
+    white-space: nowrap;
+}
+
+#appShell #changeSchedulePeriodBtn,
+#appShell #remoteControls .owner-back-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 40px;
+    margin: 0;
+    padding: 8px 12px !important;
+    border: 1px solid #e9c6b2;
+    border-radius: 11px;
+    background: #fffaf5;
+    box-shadow: none;
+    color: #a85e41;
+    font-size: .82rem !important;
+    font-weight: 750;
+    white-space: nowrap;
+}
+
+#appShell #changeSchedulePeriodBtn:hover,
+#appShell #remoteControls .owner-back-btn:hover {
+    border-color: #d9815b;
+    background: #fff0e6;
+    color: #924c34;
+}
+
+#appShell > .dashboard {
+    grid-area: dashboard;
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 16px;
+    min-width: 0;
+    margin: 0;
+    padding: 22px 30px 0;
+    border: 0;
+    border-radius: 0;
+    background: transparent;
+    box-shadow: none;
+}
+
+#appShell .stat-card {
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    min-width: 0;
+    min-height: 104px;
+    padding: 17px 20px;
+    border: 1px solid #f0e3d9;
+    border-radius: 16px;
+    background: #fffdf9;
+    box-shadow: 0 5px 18px rgba(104,67,48,.045);
+}
+
+#appShell .stat-card:last-child {
+    border-right: 1px solid #f0e3d9;
+}
+
+#appShell .stat-label {
+    color: #82766f;
+    font-size: .71rem;
+    letter-spacing: .07em;
+}
+
+#appShell .stat-card strong,
+#appShell .stat-ratio b {
+    color: #35312f;
+    font-size: 1.65rem;
+}
+
+#appShell .stat-note {
+    color: #9c8e85;
+    font-size: .75rem;
+}
+
+#appShell > .app-sidebar {
+    grid-area: sidebar;
+    position: sticky;
+    top: 0;
+    align-self: start;
+    display: flex;
+    flex-direction: column;
+    gap: 0;
+    width: 252px;
+    height: 100vh;
+    height: 100dvh;
+    min-height: 560px;
+    padding: 20px 13px;
+    border: 0;
+    border-right: 1px solid #eee6e0;
+    border-radius: 0;
+    background: #fff;
+    box-shadow: none;
+}
+
+#appShell .sidebar-brand {
+    display: flex;
+    align-items: center;
+    gap: 11px;
+    min-width: 0;
+    padding: 5px 4px 19px;
+    border-bottom: 1px solid #f0e3d9;
+}
+
+#appShell .sidebar-brand .header-logo {
+    width: 40px;
+    height: 40px;
+}
+
+#appShell .sidebar-brand h1 {
+    margin: 0;
+    color: #35312f;
+    font-size: .84rem;
+    font-weight: 850;
+    letter-spacing: .035em;
+}
+
+#appShell .sidebar-section-label {
+    margin: 19px 8px 8px;
+    color: #a49387;
+    font-size: .64rem;
+    font-weight: 800;
+    letter-spacing: .13em;
+}
+
+#appShell > .app-sidebar > .main-navigation {
+    position: static;
+    align-self: auto;
+    display: flex;
+    flex-direction: column;
+    gap: 5px;
+    width: 100%;
+    min-width: 0;
+    height: auto;
+    margin: 0;
+    padding: 0;
+    border: 0;
+    border-radius: 0;
+    background: transparent !important;
+    box-shadow: none;
+}
+
+#appShell > .app-sidebar > .main-navigation .toggle-btn {
+    display: flex;
+    align-items: center;
+    justify-content: flex-start;
+    width: 100%;
+    min-height: 45px;
+    flex: 0 0 auto;
+    padding: 10px 12px;
+    border: 0;
+    border-radius: 11px;
+    background: transparent;
+    color: #746d68;
+    font-size: .76rem;
+    font-weight: 750;
+    letter-spacing: .045em;
+    line-height: 1.35;
+    text-align: left;
+    box-shadow: none;
+}
+
+#appShell > .app-sidebar > .main-navigation .toggle-btn::before {
+    display: inline-block;
+    width: 24px;
+    margin-right: 8px;
+    color: #c78062;
+    font-size: 1rem;
+    text-align: center;
+}
+
+#appShell > .app-sidebar > .main-navigation .toggle-btn[data-view="teacher"]::before { content: "▦"; }
+#appShell > .app-sidebar > .main-navigation .toggle-btn[data-view="manage"]::before { content: "☷"; }
+#appShell > .app-sidebar > .main-navigation .toggle-btn[data-view="all"]::before { content: "◷"; }
+#appShell > .app-sidebar > .main-navigation .toggle-btn[data-view="students"]::before { content: "▤"; }
+#appShell > .app-sidebar > .main-navigation .toggle-btn[data-view="rooms"]::before { content: "⌂"; }
+
+#appShell > .app-sidebar > .main-navigation .toggle-btn:hover {
+    background: #fff2e9 !important;
+    color: #9e5b40 !important;
+}
+
+#appShell > .app-sidebar > .main-navigation .toggle-btn.active {
+    background: #fbe7da !important;
+    color: #9e5439 !important;
+    box-shadow: inset 3px 0 #d9815b !important;
+}
+
+#appShell .sidebar-account {
+    display: grid;
+    gap: 10px;
+    margin-top: auto;
+    padding: 17px 5px 4px;
+    border-top: 1px solid #f0e3d9;
+}
+
+#appShell .sidebar-account .remote-status {
+    display: block;
+    overflow-wrap: anywhere;
+    padding: 0;
+    border: 0;
+    border-radius: 0;
+    color: #514943 !important;
+    font-size: .88rem;
+    font-weight: 750;
+}
+
+#appShell .sidebar-account #signOutBtn {
+    width: 100%;
+    min-height: 40px;
+    margin: 0;
+    padding: 9px 12px !important;
+    border: 1px solid #e9c6b2;
+    border-radius: 10px;
+    background: #fff7f1;
+    box-shadow: none;
+    color: #a85e41;
+    text-align: left;
+}
+
+#appShell .sidebar-account #signOutBtn:hover {
+    border-color: #d9815b;
+    background: #fff0e6;
+    color: #924c34;
+}
+
+#appShell > .main-content {
+    grid-area: content;
+    display: grid;
+    grid-template-columns: minmax(360px, .82fr) minmax(0, 1.5fr);
+    align-items: start;
+    gap: 20px;
+    min-width: 0;
+    margin: 0;
+    padding: 22px 30px 30px;
+}
+
+#appShell .form-panel,
+#appShell .display-panel {
+    min-width: 0;
+    padding: 22px;
+    border: 1px solid #f0e3d9;
+    border-radius: 17px;
+    background: #fff;
+    box-shadow: 0 4px 16px rgba(68,49,38,.035);
+}
+
+#appShell .form-panel {
+    position: static;
+    top: auto;
+}
+
+#appShell .form-panel .eyebrow,
+#appShell .view-heading .eyebrow {
+    color: #c77958;
+}
+
+#appShell .form-group label,
+#appShell .field-label {
+    color: #514943;
+}
+
+#appShell .form-group input,
+#appShell .form-group select,
+#appShell .schedule-search input,
+#appShell .term-filter,
+#appShell .subject-combobox input {
+    border-color: #e7d9cf;
+    border-radius: 10px;
+    background: #fff;
+}
+
+#appShell .form-group input:focus,
+#appShell .form-group select:focus,
+#appShell .schedule-search input:focus,
+#appShell .term-filter:focus,
+#appShell .subject-combobox input:focus {
+    border-color: #d9815b;
+    box-shadow: 0 0 0 3px rgba(217,129,91,.14);
+}
+
+#appShell .btn-add,
+#appShell .btn-action {
+    border: 0;
+    border-radius: 10px;
+    background: linear-gradient(135deg, #d9815b, #c96f4c);
+    box-shadow: 0 7px 16px rgba(201,111,76,.16);
+}
+
+#appShell .btn-add:hover,
+#appShell .btn-action:hover {
+    background: linear-gradient(135deg, #ce7652, #b95e3e);
+    box-shadow: 0 9px 20px rgba(201,111,76,.22);
+}
+
+#appShell .btn-clear {
+    border-color: #e7d9cf;
+    border-radius: 10px;
+    color: #71665f;
+}
+
+#appShell .schedule-slot,
+#appShell .manage-section,
+#appShell .teacher-card,
+#appShell .student-section-card {
+    border-color: #eee2d9;
+    border-radius: 13px;
+    background: #fff;
+    box-shadow: 0 4px 15px rgba(104,67,48,.04);
+}
+
+#appShell .teacher-card,
+#appShell .student-section-card {
+    border-left-color: #d9815b;
+}
+
+#appShell .schedule-table {
+    border-radius: 12px;
+    box-shadow: 0 5px 16px rgba(104,67,48,.05);
+}
+
+#appShell .schedule-table th {
+    background: #fff2e9;
+    color: #795642;
+}
+
+#appShell .schedule-table td {
+    color: #514943;
+}
+
+#appShell .view-heading h2,
+#appShell .form-panel h2 {
+    color: #35312f !important;
+}
+
+#appShell .display-panel:has(#teacherView.active) {
+    display: flex;
+    flex-direction: column;
+}
+
+#appShell #teacherView.active {
+    display: flex;
+    flex: 1 1 auto;
+    flex-direction: column;
+}
+
+#appShell #teacherView > br {
+    display: none;
+}
+
+#appShell #teacherList {
+    align-content: start;
+}
+
+#appShell #teacherPagination {
+    flex: 0 0 auto;
+    padding-top: 8px;
+    background: #fffdf9;
+}
+
+#appShell #teacherPagination .pagination {
+    margin-top: 0;
+    padding-top: 10px;
+    border-color: #f0e3d9;
+}
+
+#appShell #teacherPagination .pagination-btn {
+    border-color: #e9c6b2;
+    border-radius: 9px;
+    color: #a85e41;
+}
+
+#appShell #teacherPagination .pagination-btn:hover:not(:disabled) {
+    border-color: #d9815b;
+    background: #fff0e6;
+    color: #924c34;
+}
+
+#appShell #teacherPagination .pagination-page {
+    color: #795642;
+}
+
+#appShell.owner-mode {
+    grid-template-columns: 252px minmax(0, 1fr);
+    grid-template-rows: auto auto auto;
+    grid-template-areas:
+        "sidebar header"
+        "sidebar dashboard"
+        "sidebar content";
+}
+
+@media (max-width: 1120px) {
+    #appShell.container {
+        grid-template-columns: 224px minmax(0, 1fr);
+    }
+
+    #appShell > .app-header {
+        padding: 15px 22px;
+    }
+
+    #appShell > .main-content {
+        grid-template-columns: minmax(330px, .78fr) minmax(0, 1.32fr);
+        gap: 16px;
+        padding-right: 22px;
+        padding-left: 22px;
+    }
+
+    #appShell > .dashboard {
+        padding-right: 22px;
+        padding-left: 22px;
+    }
+
+    #appShell > .app-sidebar {
+        width: 224px;
+    }
+
+    #appShell .form-panel,
+    #appShell .display-panel {
+        padding: 17px;
+    }
+}
+
+@media (max-width: 850px) {
+    #appShell.container {
+        display: flex;
+        flex-direction: column;
+        height: auto;
+        min-height: 100vh;
+        min-height: 100dvh;
+        overflow: visible;
+        gap: 0;
+        padding: 0;
+    }
+
+    #appShell > .app-header {
+        position: relative;
+        width: 100%;
+        margin: 0;
+        padding: 15px 20px;
+    }
+
+    #appShell > .app-sidebar {
+        position: static;
+        order: 0;
+        width: 100%;
+        height: auto;
+        min-height: 0;
+        padding: 12px 18px;
+        border-right: 0;
+        border-bottom: 1px solid #eee6e0;
+    }
+
+    #appShell > .app-sidebar > .main-navigation {
+        flex-direction: row;
+        flex-wrap: wrap;
+        gap: 5px;
+    }
+
+    #appShell > .app-sidebar > .main-navigation .toggle-btn {
+        width: auto;
+        flex: 1 1 155px;
+    }
+
+    #appShell .sidebar-account {
+        grid-template-columns: minmax(0, 1fr) auto;
+        align-items: center;
+        margin-top: 14px;
+    }
+
+    #appShell > .dashboard {
+        width: 100%;
+        margin: 0;
+        padding: 18px 20px 0;
+    }
+
+    #appShell > .main-content {
+        width: 100%;
+        height: auto;
+        min-height: 0;
+        grid-template-columns: minmax(0, 1fr);
+        padding: 18px 20px 26px;
+    }
+
+    #appShell .form-panel,
+    #appShell .display-panel { position: static; }
+}
+
+@media (max-width: 600px) {
+    #appShell > .app-header {
+        align-items: flex-start;
+        flex-direction: column;
+        gap: 12px;
+        padding: 14px 16px;
+    }
+
+    #appShell #remoteControls {
+        width: 100%;
+        justify-content: flex-start;
+    }
+
+    #appShell #activeSchedulePeriodHeader {
+        white-space: normal;
+    }
+
+    #appShell > .dashboard {
+        grid-template-columns: minmax(0, 1fr);
+        gap: 9px;
+        padding: 14px 16px 0;
+    }
+
+    #appShell .stat-card {
+        min-height: 82px;
+        padding: 13px 16px;
+    }
+
+    #appShell > .app-sidebar > .main-navigation .toggle-btn {
+        flex-basis: 135px;
+        font-size: .7rem;
+    }
+
+    #appShell .sidebar-account #signOutBtn {
+        width: auto;
+        min-width: 100px;
+    }
+
+    #appShell .display-panel,
+    #appShell .form-panel {
+        padding: 15px;
+    }
+
+    #appShell > .main-content {
+        padding: 14px 16px 22px;
+    }
+
+    #appShell > .app-sidebar {
+        padding: 10px 14px;
+    }
+}
+
+/* Final shell overrides: keep legacy header rules from reserving workspace space. */
+#appShell.container,
+#appShell.owner-mode {
+    grid-template-columns: 250px minmax(0, 1fr);
+    grid-template-rows: auto minmax(0, 1fr);
+    grid-template-areas:
+        "sidebar dashboard"
+        "sidebar content";
+    align-content: start;
+    width: 100%;
+    max-width: none;
+    min-height: 100vh;
+    min-height: 100dvh;
+    margin: 0;
+    padding: 0;
+    overflow: visible;
+    border: 0;
+    border-radius: 0;
+    background:
+        radial-gradient(ellipse at 92% 7%, rgba(239,129,94,.07), transparent 34rem),
+        #fbf5f0;
+    box-shadow: none;
+}
+
+#appShell > .app-sidebar {
+    grid-area: sidebar;
+    grid-row: 1 / span 2;
+    position: sticky;
+    top: 0;
+    align-self: start;
+    width: 250px;
+    height: 100vh;
+    height: 100dvh;
+    min-height: 0;
+    padding: 22px 14px 16px;
+    border: 0;
+    border-right: 1px solid #ece8e4;
+    border-radius: 0;
+    background: #fff;
+    box-shadow: none;
+}
+
+#appShell .sidebar-period {
+    margin-top: 27px;
+    padding: 16px 8px;
+    border-top: 1px solid #eee9e5;
+    border-bottom: 1px solid #eee9e5;
+}
+
+#appShell .sidebar-period .sidebar-section-label {
+    margin: 0 0 9px;
+}
+
+#appShell .sidebar-period .active-schedule-period-header {
+    padding: 0;
+    border: 0;
+    border-radius: 0;
+    background: transparent;
+    color: #35312f;
+    font-size: .87rem;
+    font-weight: 750;
+    line-height: 1.5;
+    white-space: normal;
+}
+
+#appShell .sidebar-period .remote-controls {
+    display: grid;
+    justify-content: stretch;
+    gap: 8px;
+    margin-top: 12px;
+}
+
+#appShell .sidebar-period #changeSchedulePeriodBtn,
+#appShell .sidebar-period .owner-back-btn {
+    justify-content: flex-start;
+    width: 100%;
+    min-height: 38px;
+    padding: 8px 10px !important;
+    border-color: #eadbd2;
+    border-radius: 9px;
+    background: #fff;
+    color: #8c5840;
+    font-size: .76rem !important;
+}
+
+#appShell > .dashboard {
+    grid-area: dashboard;
+    grid-column: 2;
+    grid-row: 1;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    width: 100%;
+    padding: 24px 32px 0;
+}
+
+#appShell > .main-content {
+    grid-area: content;
+    grid-column: 2;
+    grid-row: 2;
+    grid-template-columns: minmax(340px, .72fr) minmax(0, 1.45fr);
+    align-items: start;
+    gap: 24px;
+    width: 100%;
+    min-width: 0;
+    margin: 0;
+    padding: 24px 32px 36px;
+}
+
+#appShell .form-panel,
+#appShell .display-panel {
+    min-width: 0;
+    padding: 0;
+    border: 0;
+    border-radius: 0;
+    background: transparent;
+    box-shadow: none;
+}
+
+#appShell .form-panel {
+    position: static;
+    top: auto;
+}
+
+#appShell .view-content.active > br {
+    display: none;
+}
+
+#appShell .display-panel,
+#appShell #allSchedules,
+#appShell #studentSectionList,
+#appShell #roomAssignmentList {
+    width: 100%;
+    max-width: none;
+}
+
+#appShell #teacherList {
+    display: grid;
+    width: 100%;
+    gap: 14px;
+}
+
+#appShell .teacher-card,
+#appShell .student-section-card,
+#appShell .room-assignment-card {
+    width: 100%;
+    max-width: none;
+}
+
+#appShell #studentSectionList {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    gap: 12px;
+}
+
+#appShell .schedule-table,
+#appShell .schedule-table.full-table {
+    width: 100%;
+    table-layout: auto;
+}
+
+#appShell .main-content.all-view-active,
+#appShell .main-content.manage-view-active,
+#appShell.owner-mode .main-content {
+    grid-template-columns: minmax(0, 1fr);
+}
+
+#appShell .main-content.all-view-active .form-panel,
+#appShell .main-content.manage-view-active .form-panel,
+#appShell.owner-mode .main-content .form-panel {
+    display: none;
+}
+
+#appShell .main-content.all-view-active .display-panel,
+#appShell .main-content.manage-view-active .display-panel,
+#appShell.owner-mode .main-content .display-panel {
+    grid-column: 1 / -1;
+    width: 100%;
+}
+
+@media (max-width: 1120px) {
+    #appShell.container,
+    #appShell.owner-mode {
+        grid-template-columns: 224px minmax(0, 1fr);
+    }
+
+    #appShell > .app-sidebar {
+        width: 224px;
+    }
+
+    #appShell > .dashboard {
+        padding-right: 24px;
+        padding-left: 24px;
+    }
+
+    #appShell > .main-content {
+        grid-template-columns: minmax(310px, .7fr) minmax(0, 1.3fr);
+        gap: 18px;
+        padding-right: 24px;
+        padding-left: 24px;
+    }
+}
+
+@media (max-width: 850px) {
+    #appShell.container,
+    #appShell.owner-mode {
+        display: flex;
+        flex-direction: column;
+        min-height: 100vh;
+        min-height: 100dvh;
+    }
+
+    #appShell > .app-sidebar {
+        position: static;
+        order: 0;
+        width: 100%;
+        height: auto;
+        min-height: 0;
+        padding: 12px 20px;
+        border-right: 0;
+        border-bottom: 1px solid #ece8e4;
+    }
+
+    #appShell .sidebar-period {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        margin-top: 12px;
+        padding: 12px 0 0;
+    }
+
+    #appShell .sidebar-period .sidebar-section-label {
+        margin: 0;
+        white-space: nowrap;
+    }
+
+    #appShell .sidebar-period .active-schedule-period-header {
+        flex: 1 1 auto;
+    }
+
+    #appShell .sidebar-period .remote-controls {
+        display: flex;
+        margin-top: 0;
+    }
+
+    #appShell .sidebar-period #changeSchedulePeriodBtn,
+    #appShell .sidebar-period .owner-back-btn {
+        width: auto;
+    }
+
+    #appShell > .dashboard,
+    #appShell > .main-content {
+        width: 100%;
+        grid-column: auto;
+        grid-row: auto;
+    }
+
+    #appShell > .main-content {
+        grid-template-columns: minmax(0, 1fr);
+        padding: 22px;
+    }
+}
+
+@media (max-width: 600px) {
+    #appShell > .app-sidebar {
+        padding: 11px 14px;
+    }
+
+    #appShell .sidebar-period {
+        flex-wrap: wrap;
+        gap: 8px;
+    }
+
+    #appShell .sidebar-period .sidebar-section-label,
+    #appShell .sidebar-period .active-schedule-period-header {
+        flex-basis: 100%;
+    }
+
+    #appShell .sidebar-period .remote-controls {
+        width: 100%;
+    }
+
+    #appShell .sidebar-period #changeSchedulePeriodBtn,
+    #appShell .sidebar-period .owner-back-btn {
+        width: 100%;
+    }
+
+    #appShell > .dashboard {
+        grid-template-columns: minmax(0, 1fr);
+        gap: 9px;
+        padding: 14px 14px 0;
+    }
+
+    #appShell > .main-content {
+        gap: 20px;
+        padding: 18px 14px 28px;
+    }
+
+    #appShell .student-section-card {
+        align-items: flex-start;
+        flex-direction: column;
+    }
+
+    #appShell .schedule-table {
+        display: block;
+        overflow-x: auto;
+    }
+}
+
+html,
+body {
+    overflow-x: clip;
+}
+
+body {
+    background: #fbf5f0;
+}
+
+#appShell.screen-transition-layer,
+#workspaceScreen.screen-transition-layer {
+    position: fixed !important;
+    inset: 0 !important;
+    width: 100% !important;
+    height: 100vh !important;
+    height: 100dvh !important;
+    min-height: 0 !important;
+    margin: 0 !important;
+    overflow-x: clip !important;
+    overflow-y: auto !important;
+    pointer-events: none;
+    transition:
+        transform 420ms cubic-bezier(.22,.72,.25,1),
+        opacity 420ms cubic-bezier(.22,.72,.25,1);
+    will-change: transform, opacity;
+    backface-visibility: hidden;
+}
+
+#appShell.screen-transition-layer {
+    background:
+        radial-gradient(ellipse at 92% 7%, rgba(239,129,94,.07), transparent 34rem),
+        #fbf5f0;
+}
+
+#appShell.screen-exit-left,
+#workspaceScreen.screen-exit-left {
+    z-index: 30 !important;
+    opacity: 1;
+    transform: translateX(0);
+}
+
+#appShell.screen-exit-right,
+#workspaceScreen.screen-exit-right {
+    z-index: 30 !important;
+    opacity: 1;
+    transform: translateX(0);
+}
+
+#appShell.screen-enter-right,
+#workspaceScreen.screen-enter-right {
+    z-index: 31 !important;
+    opacity: .98;
+    transform: translateX(100%);
+}
+
+#appShell.screen-enter-left,
+#workspaceScreen.screen-enter-left {
+    z-index: 31 !important;
+    opacity: .98;
+    transform: translateX(-100%);
+}
+
+#appShell.screen-exit-left.screen-transition-active,
+#workspaceScreen.screen-exit-left.screen-transition-active {
+    opacity: .96;
+    transform: translateX(-100%);
+}
+
+#appShell.screen-exit-right.screen-transition-active,
+#workspaceScreen.screen-exit-right.screen-transition-active {
+    opacity: .96;
+    transform: translateX(100%);
+}
+
+#appShell.screen-enter-right.screen-transition-active,
+#workspaceScreen.screen-enter-right.screen-transition-active,
+#appShell.screen-enter-left.screen-transition-active,
+#workspaceScreen.screen-enter-left.screen-transition-active {
+    opacity: 1;
+    transform: translateX(0);
+}
+
+@media (prefers-reduced-motion: reduce) {
+    #appShell.screen-transition-layer,
+    #workspaceScreen.screen-transition-layer {
+        transition-duration: 1ms;
+    }
 }
