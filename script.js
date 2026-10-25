@@ -36,10 +36,6 @@ class ScheduleManager {
         this.teacherScheduleSearch = '';
         this.studentSectionSearch = '';
         this.roomAssignmentSearch = '';
-        this.teacherViewTermFilter = '';
-        this.allViewTermFilter = '';
-        this.studentsViewTermFilter = '';
-        this.roomsViewTermFilter = '';
         this.roomsViewBuildingFilter = '';
         // Pagination state
         this.pagination = {
@@ -120,7 +116,6 @@ class ScheduleManager {
                 'false'
             );
         });
-        document.getElementById('saveSchoolYearBtn')?.addEventListener('click', () => this.saveSchoolYearSetting());
         document.getElementById('teacherSelect')?.addEventListener('change', () => {
             this.renderCourseOptions();
             this.renderClassSectionOptions();
@@ -182,12 +177,6 @@ class ScheduleManager {
         document.getElementById('roomsViewBuildingFilter')?.addEventListener('change', e => {
             this.roomsViewBuildingFilter = e.target.value;
             this.renderRoomAssignmentsView();
-        });
-        [['teacherViewTermFilter', 'teacherViewTermFilter', 'renderTeacherView'], ['allViewTermFilter', 'allViewTermFilter', 'renderAllView'], ['studentsViewTermFilter', 'studentsViewTermFilter', 'renderStudentsView'], ['roomsViewTermFilter', 'roomsViewTermFilter', 'renderRoomAssignmentsView']].forEach(([id, property, renderer]) => {
-            document.getElementById(id)?.addEventListener('change', e => {
-                this[property] = e.target.value;
-                this[renderer]();
-            });
         });
         document.getElementById('clearScheduleBtn')?.addEventListener('click', () => this.clearScheduleForm());
         document.querySelectorAll('.toggle-btn').forEach(btn => {
@@ -276,7 +265,7 @@ class ScheduleManager {
             const message = document.getElementById('schedulePeriodMessage');
 
             if (schoolYearInput) {
-                schoolYearInput.value = this.schoolYear || '';
+                schoolYearInput.value = this.getCurrentSchoolYear() || '';
             }
 
             if (termInput) {
@@ -1588,7 +1577,6 @@ class ScheduleManager {
         // Build teacher + term groups first so each card stays together.
         const teacherGroups = uniqueTeachers.flatMap(teacherName => {
             const terms = [...new Set(this.getTeacherSchedules(teacherName).map(schedule => schedule.term || ''))]
-                .filter(term => !this.teacherViewTermFilter || term === this.teacherViewTermFilter)
                 .sort((a, b) => this.compareTerms(a, b));
 
             return terms.map(term => ({
@@ -1696,7 +1684,7 @@ class ScheduleManager {
         });
 
         const groupsSorted = Object.values(grouped).sort((a, b) => a.teacherName.localeCompare(b.teacherName) || this.compareTerms(a.term, b.term));
-        const filteredGroups = groupsSorted.filter(group => group.teacherName.toLowerCase().includes(this.teacherScheduleSearch) && (!this.allViewTermFilter || group.term === this.allViewTermFilter));
+        const filteredGroups = groupsSorted.filter(group => group.teacherName.toLowerCase().includes(this.teacherScheduleSearch));
         if (!filteredGroups.length) {
             allSchedules.innerHTML = `<p class="empty-message">No teacher schedules match "${this.escapeHtml(this.teacherScheduleSearch)}".</p>`;
             return;
@@ -1855,7 +1843,7 @@ class ScheduleManager {
         }
         const dayOrder = { Monday: 1, Tuesday: 2, Wednesday: 3, Thursday: 4, Friday: 5, Saturday: 6 };
         groups.forEach(group => group.schedules.sort((a, b) => (dayOrder[a.day] || 0) - (dayOrder[b.day] || 0) || a.startTime.localeCompare(b.startTime)));
-        const filteredGroups = groups.filter(group => group.section.toLowerCase().includes(this.studentSectionSearch) && (!this.studentsViewTermFilter || group.term === this.studentsViewTermFilter));
+        const filteredGroups = groups.filter(group => group.section.toLowerCase().includes(this.studentSectionSearch));
         if (!filteredGroups.length) {
             list.innerHTML = `<p class="empty-message">No sections match "${this.escapeHtml(this.studentSectionSearch)}".</p>`;
             return;
@@ -1941,7 +1929,6 @@ class ScheduleManager {
         }
         const filteredGroups = groups.filter(group =>
             group.room.toLowerCase().includes(this.roomAssignmentSearch) &&
-            (!this.roomsViewTermFilter || group.term === this.roomsViewTermFilter) &&
             (!this.roomsViewBuildingFilter ||
                 group.schedules.some(schedule =>
                     (schedule.building || '').trim() === this.roomsViewBuildingFilter
@@ -1986,8 +1973,6 @@ class ScheduleManager {
     }
 
     renderManageView() {
-        const schoolYearInput = document.getElementById('schoolYearInput');
-        if (schoolYearInput && document.activeElement !== schoolYearInput) schoolYearInput.value = this.schoolYear;
         const teacherListManage = document.getElementById('teacherListManage');
         const roomListManage = document.getElementById('roomListManage');
         const buildingListManage = document.getElementById('buildingListManage');
@@ -2766,7 +2751,7 @@ class ScheduleManager {
                 <img src="assets/logo.png" style="width:70px; height:70px; object-fit:contain;">
             </div>
             <div style="text-align:center; font-size:16px; font-weight:700; margin:4px 0 2px;">COLLEGE OF ENGINEERING</div>
-            <div style="text-align:center; font-size:14px; margin-bottom:8px;">${this.formatTerm(term).toUpperCase()} ${this.escapeHtml(this.schoolYear)}</div>
+            <div style="text-align:center; font-size:14px; margin-bottom:8px;">${this.formatTerm(term).toUpperCase()} ${this.escapeHtml(this.getCurrentSchoolYear())}</div>
             <div class="section-official-title-row">
                 <div class="section-official-title">${this.escapeHtml(officialSectionName)}</div>
                 <!-- Class Adviser temporarily omitted until adviser management is implemented. -->
@@ -2816,7 +2801,8 @@ class ScheduleManager {
         }
         document.body.appendChild(element);
         this.createPdfFromElement(element, section ? { orientation: 'landscape', format: 'a4' } : {}).then(pdf => {
-            const label = section ? `${section}-${this.formatTerm(term)}-${this.schoolYear}-student-schedule` : room ? `${room}-${this.formatTerm(term)}-${this.schoolYear}-assignment` : `${teacher}-${this.formatTerm(term)}-${this.schoolYear}-teacher-schedule`;
+            const schoolYear = this.getCurrentSchoolYear();
+            const label = section ? `${section}-${this.formatTerm(term)}-${schoolYear}-student-schedule` : room ? `${room}-${this.formatTerm(term)}-${schoolYear}-assignment` : `${teacher}-${this.formatTerm(term)}-${schoolYear}-teacher-schedule`;
             pdf.save(this.pdfFilename(label));
             this.showNotification('PDF downloaded.', 'success');
         }).catch(error => this.showNotification('Failed to download PDF: ' + error.message, 'error'))
@@ -3079,7 +3065,7 @@ class ScheduleManager {
             <div style="text-align:center; margin-bottom:18px; color:#000; line-height:1.18;">
                 <div style="font-size:14px; font-weight:700;">COLLEGE OF ENGINEERING</div>
                 <div style="font-size:14px; font-weight:700;">INSTRUCTOR'S LOAD</div>
-                <div style="font-size:12px; font-weight:700; margin-top:3px;">School Year: ${this.escapeHtml(this.schoolYear)} (${termLabel})</div>
+                <div style="font-size:12px; font-weight:700; margin-top:3px;">School Year: ${this.escapeHtml(this.getCurrentSchoolYear())} (${termLabel})</div>
             </div>
         `;
 
@@ -3694,14 +3680,6 @@ class ScheduleManager {
         return `activeSchedulePeriodSession:${ownerId || 'unknown'}`;
     }
     loadSchoolYear() { return localStorage.getItem(this.storageKey('schoolYear')) || '2026 – 2027'; }
-    saveSchoolYearSetting() {
-        const input = document.getElementById('schoolYearInput');
-        const value = input?.value.trim();
-        if (!value) return this.showNotification('Enter a school year first.', 'error');
-        this.schoolYear = value;
-        localStorage.setItem(this.storageKey('schoolYear'), value);
-        this.showNotification('School year saved.', 'success');
-    }
     saveSubjectColors() { localStorage.setItem(this.storageKey('subjectColors'), JSON.stringify(this.subjectColors || {})); }
     loadSubjectColors() {
         const d = localStorage.getItem(this.storageKey('subjectColors'));
@@ -4759,7 +4737,9 @@ class ScheduleManager {
             if (signOutBtn) signOutBtn.classList.add('hidden');
             return;
         }
-        if (authScreen) authScreen.classList.add('hidden');
+        if (!this.remoteEnabled && authScreen) {
+            authScreen.classList.add('hidden');
+        }
         if (appShell) appShell.classList.add('hidden');
         this.showWorkspaceScreen(false);
         this.loadUserLocalData();
@@ -5153,6 +5133,7 @@ class ScheduleManager {
 
         if (activePeriod) {
             this.activeSchedulePeriod = activePeriod;
+            this.schoolYear = activePeriod.school_year;
             const periodHeader =
                 document.getElementById('activeSchedulePeriodHeader');
 
@@ -5194,6 +5175,7 @@ class ScheduleManager {
 
         this.activeSchedulePeriod = period;
         this.term = period.term;
+        this.schoolYear = period.school_year;
         const periodHeader =
             document.getElementById('activeSchedulePeriodHeader');
 
@@ -5232,6 +5214,10 @@ class ScheduleManager {
         };
 
         return labels[term] || term;
+    }
+
+    getCurrentSchoolYear() {
+        return this.activeSchedulePeriod?.school_year || this.schoolYear || '';
     }
 
     renderWorkspacePeriods() {
@@ -5458,11 +5444,42 @@ class ScheduleManager {
         this.workspaceScreenVisible = show;
 
         if (show) {
-            if (authScreen) authScreen.classList.add('hidden');
             workspaceScreen.classList.remove('hidden');
             appShell.classList.add('hidden');
+            const transitionFromAuth =
+                authScreen && !authScreen.classList.contains('hidden');
+
+            if (transitionFromAuth) {
+                authScreen.classList.add('workspace-transition-out');
+                workspaceScreen.classList.add('workspace-transition-in');
+
+                requestAnimationFrame(() => {
+                    authScreen.classList.add('workspace-transition-active');
+                    workspaceScreen.classList.add('workspace-transition-active');
+                });
+
+                window.setTimeout(() => {
+                    authScreen.classList.add('hidden');
+                    authScreen.classList.remove(
+                        'workspace-transition-out',
+                        'workspace-transition-active'
+                    );
+                    workspaceScreen.classList.remove(
+                        'workspace-transition-in',
+                        'workspace-transition-active'
+                    );
+                }, 700);
+            }
         } else {
             workspaceScreen.classList.add('hidden');
+            workspaceScreen.classList.remove(
+                'workspace-transition-in',
+                'workspace-transition-active'
+            );
+            authScreen?.classList.remove(
+                'workspace-transition-out',
+                'workspace-transition-active'
+            );
         }
     }
 
@@ -5928,6 +5945,7 @@ class ScheduleManager {
             }
 
             console.error('Sync failed', err);
+            document.getElementById('authScreen')?.classList.add('hidden');
             this.showNotification(
                 'Remote sync failed. See console.',
                 'error'

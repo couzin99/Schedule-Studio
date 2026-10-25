@@ -10,74 +10,141 @@
 <body>
     <main id="authScreen" class="auth-screen" aria-live="polite">
         <section class="auth-card">
-            <img src="assets/logo.png" alt="College of Engineering logo" class="auth-logo">
-            <p class="eyebrow">COLLEGE OF ENGINEERING</p>
-            <h1 id="authTitle">Welcome to Schedule Studio</h1>
-            <p id="authSubtitle">Sign in</p>
-            <form id="authForm" class="auth-form">
-                <label for="authName" id="authNameLabel" class="hidden">Full name</label>
-                <input id="authName" class="hidden" type="text" autocomplete="name" placeholder="Full name">
-                <label for="authEmail">Email address</label>
-                <input id="authEmail" type="email" autocomplete="email" placeholder="you@example.com" required>
-                <label for="authPassword">Password</label>
-                <input id="authPassword" type="password" autocomplete="current-password" minlength="8" placeholder="At least 8 characters" required>
-                <button id="authSubmit" class="btn-add" type="submit">Sign in <span>→</span></button>
-            </form>
-            <form id="resetPasswordForm" class="auth-form hidden">
-                <label for="resetPassword">New password</label>
-                <input id="resetPassword" type="password" minlength="8" autocomplete="new-password" placeholder="At least 8 characters" required>
-                <label for="resetPasswordConfirm">Confirm new password</label>
-                <input id="resetPasswordConfirm" type="password" minlength="8" autocomplete="new-password" placeholder="Repeat your password" required>
-                <button class="btn-add" type="submit">Set new password <span>→</span></button>
-            </form>
-            <button id="authModeToggle" class="auth-link" type="button">Need an account? Create one</button>
-            <button id="forgotPasswordBtn" class="auth-link muted-link" type="button">Forgot password?</button>
-            <p id="authMessage" class="auth-message"></p>
+            <div class="auth-form-panel">
+                <div class="auth-brand">
+                    <img class="auth-brand-mark" src="assets/schedule-studio-mark.svg" alt="">
+                    <div class="auth-brand-copy">
+                        <p class="auth-brand-name">SCHEDULE STUDIO</p>
+                        <p class="auth-kicker">YOUR SCHEDULING WORKSPACE</p>
+                    </div>
+                </div>
+                <div class="auth-intro">
+                    <h1 id="authTitle">Welcome back</h1>
+                    <p id="authSubtitle"></p>
+                </div>
+                <form id="authForm" class="auth-form">
+                    <label for="authName" id="authNameLabel" class="hidden">Full name</label>
+                    <input id="authName" class="hidden" type="text" autocomplete="name" placeholder="Full name">
+                    <label for="authEmail">Email address</label>
+                    <input id="authEmail" type="email" autocomplete="email" placeholder="you@example.com" required>
+                    <label for="authPassword">Password</label>
+                    <input id="authPassword" type="password" autocomplete="current-password" minlength="8" placeholder="At least 8 characters" required>
+                    <button id="authSubmit" class="btn-add" type="submit">Sign in <span>→</span></button>
+                </form>
+                <form id="resetPasswordForm" class="auth-form hidden">
+                    <label for="resetPassword">New password</label>
+                    <input id="resetPassword" type="password" minlength="8" autocomplete="new-password" placeholder="At least 8 characters" required>
+                    <label for="resetPasswordConfirm">Confirm new password</label>
+                    <input id="resetPasswordConfirm" type="password" minlength="8" autocomplete="new-password" placeholder="Repeat your password" required>
+                    <button class="btn-add" type="submit">Set new password <span>→</span></button>
+                </form>
+                <div class="auth-secondary-actions">
+                    <button id="forgotPasswordBtn" class="auth-link muted-link" type="button">Forgot password?</button>
+                    <button id="authModeToggle" class="auth-link" type="button">Need an account? Create one</button>
+                </div>
+                <p id="authMessage" class="auth-message"></p>
+            </div>
+            <aside class="auth-visual" aria-hidden="true">
+                <div class="auth-visual-copy">
+                    <span class="auth-visual-badge">A calmer way to plan</span>
+                    <h2>Make room<br>for a great week.</h2>
+                    <p>Bring classes, people, and places into one clear view.</p>
+                </div>
+                <div class="auth-schedule-art">
+                    <div class="auth-art-topline">
+                        <span class="auth-art-dot"></span>
+                        <span class="auth-art-dot"></span>
+                        <span class="auth-art-dot"></span>
+                        <span class="auth-art-week">WEEKLY PLAN</span>
+                    </div>
+                    <div class="auth-art-heading">
+                        <strong>Your week</strong>
+                        <span>MON — FRI</span>
+                    </div>
+                    <div class="auth-art-row"><span>08:00</span><i class="auth-art-class peach-class"><b>Design studio</b><small>Room 204 · Monday</small></i></div>
+                    <div class="auth-art-row"><span>10:30</span><i class="auth-art-class coral-class"><b>Applied science</b><small>North hall · Tuesday</small></i></div>
+                    <div class="auth-art-row"><span>13:00</span><i class="auth-art-class yellow-class"><b>Open work time</b><small>Library · Wednesday</small></i></div>
+                    <div class="auth-art-row"><span>14:30</span><i class="auth-art-class green-class"><b>Project workshop</b><small>Room 108 · Thursday</small></i></div>
+                    <div class="auth-art-footer"><span></span><b>Everything in its place</b></div>
+                </div>
+                <span class="auth-orbit auth-orbit-one"></span>
+                <span class="auth-orbit auth-orbit-two"></span>
+            </aside>
         </section>
     </main>
 
     <div id="workspaceScreen" class="workspace-screen hidden">
         <div class="workspace-card">
-
-            <div class="workspace-brand">
-                <p class="eyebrow">COLLEGE OF ENGINEERING</p>
-                <h1>SCHEDULE STUDIO</h1>
-                <p>Build and manage your class schedules by academic period.</p>
-            </div>
-
-            <div class="workspace-welcome">
-                <p class="eyebrow">WELCOME BACK</p>
-                <h2 id="workspaceWelcomeName">Let's get started.</h2>
-                <p>
-                    Choose an existing scheduling period or create a new one
-                    to begin building your schedule.
-                </p>
-            </div>
-
-            <div class="workspace-actions">
-                <button
-                    type="button"
-                    id="createSchedulePeriodBtn"
-                    class="btn-add">
-                    + Create New Scheduling Period
-                </button>
-            </div>
-
-            <div class="workspace-existing">
-                <div class="workspace-section-heading">
-                    <div>
-                        <p class="eyebrow">YOUR WORKSPACES</p>
-                        <h3>Scheduling Periods</h3>
+            <aside class="workspace-identity" aria-label="Schedule Studio">
+                <div class="workspace-brand">
+                    <img class="workspace-brand-mark" src="assets/schedule-studio-mark.svg" alt="">
+                    <div class="workspace-brand-copy">
+                        <h1>SCHEDULE STUDIO</h1>
+                        <p class="workspace-brand-kicker">YOUR SCHEDULING WORKSPACE</p>
                     </div>
+                    <p>Build and manage your class schedules by academic period.</p>
                 </div>
 
-                <div id="workspacePeriodList" class="workspace-period-list">
-                    <p class="empty-message">
-                        No scheduling periods yet.
+                <div class="workspace-schedule-art" aria-hidden="true">
+                    <div class="workspace-art-header">
+                        <span class="workspace-art-dots"><i></i><i></i><i></i></span>
+                        <span>WEEKLY PLAN</span>
+                    </div>
+                    <div class="workspace-art-title">
+                        <strong>Your schedule</strong>
+                        <span>MON — FRI</span>
+                    </div>
+                    <div class="workspace-art-row">
+                        <span>08:00</span><i class="workspace-art-block art-peach">Foundations</i>
+                    </div>
+                    <div class="workspace-art-row">
+                        <span>10:30</span><i class="workspace-art-block art-coral">Applied science</i>
+                    </div>
+                    <div class="workspace-art-row">
+                        <span>13:00</span><i class="workspace-art-block art-cream">Studio session</i>
+                    </div>
+                    <div class="workspace-art-row">
+                        <span>14:30</span><i class="workspace-art-block art-sage">Project lab</i>
+                    </div>
+                    <div class="workspace-art-footer"><span></span>Everything in its place</div>
+                </div>
+                <span class="workspace-art-orbit workspace-art-orbit-one"></span>
+                <span class="workspace-art-orbit workspace-art-orbit-two"></span>
+            </aside>
+
+            <section class="workspace-selection" aria-label="Scheduling period selection">
+                <div class="workspace-welcome">
+                    <h2 id="workspaceWelcomeName">Let's get started.</h2>
+                    <p>
+                        Choose an existing scheduling period or create a new one
+                        to begin building your schedule.
                     </p>
                 </div>
-            </div>
 
+                <div class="workspace-actions">
+                    <button
+                        type="button"
+                        id="createSchedulePeriodBtn"
+                        class="btn-add">
+                        + Create New Scheduling Period
+                    </button>
+                </div>
+
+                <div class="workspace-existing">
+                    <div class="workspace-section-heading">
+                        <div>
+                            <p class="eyebrow">YOUR WORKSPACES</p>
+                            <h3>Scheduling Periods</h3>
+                        </div>
+                    </div>
+
+                    <div id="workspacePeriodList" class="workspace-period-list">
+                        <p class="empty-message">
+                            No scheduling periods yet.
+                        </p>
+                    </div>
+                </div>
+            </section>
         </div>
     </div>
 
@@ -250,7 +317,7 @@
             <div class="display-panel">
                 <!-- Teacher View -->
                 <div id="teacherView" class="view-content active">
-                    <div class="view-heading"><div><p class="eyebrow">WORKLOAD VIEW</p><h2>TEACHER SCHEDULES</h2></div><div class="view-tools"><select id="teacherViewTermFilter" class="term-filter" aria-label="Filter teacher schedules by term"><option value="">All Terms</option><option value="1st semester">1st Semester</option><option value="2nd semester">2nd Semester</option><option value="summer">Summer</option></select><label class="schedule-search"><span class="sr-only">Search teacher schedules</span><input id="teacherViewSearch" type="search" placeholder="Search teacher name or surname" autocomplete="off"></label></div></div><br>
+                    <div class="view-heading"><div><p class="eyebrow">WORKLOAD VIEW</p><h2>TEACHER SCHEDULES</h2></div><div class="view-tools"><label class="schedule-search"><span class="sr-only">Search teacher schedules</span><input id="teacherViewSearch" type="search" placeholder="Search teacher name or surname" autocomplete="off"></label></div></div><br>
                     <div id="teacherList" class="teacher-list">
                         <p class="empty-message">No schedules yet. Add one to get started!</p>
                     </div>
@@ -258,7 +325,7 @@
 
                 <!-- All Schedules View -->
                 <div id="allView" class="view-content">
-                    <div class="view-heading"><div><p class="eyebrow">TEACHER TIMETABLE</p><h2>TEACHERS SCHEDULE</h2></div><div class="view-tools"><select id="allViewTermFilter" class="term-filter" aria-label="Filter teacher schedules by term"><option value="">All Terms</option><option value="1st semester">1st Semester</option><option value="2nd semester">2nd Semester</option><option value="summer">Summer</option></select><label class="schedule-search"><span class="sr-only">Search teacher schedules</span><input id="teacherScheduleSearch" type="search" placeholder="Search teacher name or surname" autocomplete="off"></label></div></div><br>
+                    <div class="view-heading"><div><p class="eyebrow">TEACHER TIMETABLE</p><h2>TEACHERS SCHEDULE</h2></div><div class="view-tools"><label class="schedule-search"><span class="sr-only">Search teacher schedules</span><input id="teacherScheduleSearch" type="search" placeholder="Search teacher name or surname" autocomplete="off"></label></div></div><br>
                     <div id="allSchedules" class="all-schedules">
                         <p class="empty-message">No schedules yet. Add one to get started!</p>
                     </div>
@@ -266,7 +333,7 @@
 
                 <!-- Student Schedule View -->
                 <div id="studentsView" class="view-content">
-                    <div class="view-heading"><div><p class="eyebrow">PROGRAM TIMETABLES</p><h2>STUDENTS SCHEDULE</h2></div><div class="view-tools"><select id="studentsViewTermFilter" class="term-filter" aria-label="Filter student schedules by term"><option value="">All Terms</option><option value="1st semester">1st Semester</option><option value="2nd semester">2nd Semester</option><option value="summer">Summer</option></select><label class="schedule-search"><span class="sr-only">Search student sections</span><input id="studentSectionSearch" type="search" placeholder="Search section" autocomplete="off"></label></div></div><br>
+                    <div class="view-heading"><div><p class="eyebrow">PROGRAM TIMETABLES</p><h2>STUDENTS SCHEDULE</h2></div><div class="view-tools"><label class="schedule-search"><span class="sr-only">Search student sections</span><input id="studentSectionSearch" type="search" placeholder="Search section" autocomplete="off"></label></div></div><br>
                     <div id="studentSectionList" class="student-section-list">
                         <p class="empty-message">No student schedules yet. Add a class to get started!</p>
                     </div>
@@ -274,7 +341,7 @@
 
                 <!-- Room Assignment View -->
                 <div id="roomsView" class="view-content">
-                    <div class="view-heading"><div><p class="eyebrow">ROOM TIMETABLES</p><h2>ROOM ASSIGNMENT</h2></div><div class="view-tools"><select id="roomsViewTermFilter" class="term-filter" aria-label="Filter room assignments by term"><option value="">All Terms</option><option value="1st semester">1st Semester</option><option value="2nd semester">2nd Semester</option><option value="summer">Summer</option></select><select id="roomsViewBuildingFilter" class="term-filter" aria-label="Filter room assignments by building">
+                    <div class="view-heading"><div><p class="eyebrow">ROOM TIMETABLES</p><h2>ROOM ASSIGNMENT</h2></div><div class="view-tools"><select id="roomsViewBuildingFilter" class="term-filter" aria-label="Filter room assignments by building">
                         <option value="">All Buildings</option>
                     </select><label class="schedule-search"><span class="sr-only">Search room assignments</span><input id="roomAssignmentSearch" type="search" placeholder="Search room" autocomplete="off"></label></div></div><br>
                     <div id="roomAssignmentList" class="all-schedules"><p class="empty-message">No room assignments yet. Add a class to get started!</p></div>
@@ -304,10 +371,6 @@
                 <div id="manageView" class="view-content">
                     <div class="view-heading"><div><p class="eyebrow">SETUP</p><h2>MANAGE YOUR LISTS</h2></div></div><br>
                     <div class="manage-sections">
-                        <div class="manage-section">
-                            <div class="manage-section-heading"><div><h3>SCHOOL YEAR</h3><p>Set the school year used on generated schedule PDFs.</p></div></div>
-                            <div class="manage-add"><input type="text" id="schoolYearInput" placeholder="e.g., 2026 – 2027" maxlength="20"><button type="button" id="saveSchoolYearBtn" class="btn-action">Save school year</button></div>
-                        </div>
                         <div class="manage-section">
                             <div class="manage-section-heading"><div><h3>TEACHERS</h3><p>Add instructors available for class assignments.</p></div></div>
                             <div class="manage-add"><input type="text" id="newTeacher" placeholder="Teacher name"><button type="button" id="addTeacherBtn" class="btn-action">Add teacher</button></div>

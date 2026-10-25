@@ -57,6 +57,7 @@ manager.periodRequestId = 10;
 if (!manager.setActiveSchedulePeriod(periodTwo)) throw new Error('Could not activate a valid schedule period.');
 if (manager.schedules.length || manager.ownerAllSchedules.length) throw new Error('Changing schedule periods retained stale schedule rows.');
 if (manager.periodRequestId !== 11) throw new Error('Changing schedule periods did not invalidate an older period request.');
+if (manager.getCurrentSchoolYear() !== periodTwo.school_year) throw new Error('Active schedule period is not the source of truth for the school year.');
 manager.activeSchedulePeriod = { id: 'period-1', term: '1st semester' };
 manager.term = '1st semester';
 manager.periodRequestId = 0;
