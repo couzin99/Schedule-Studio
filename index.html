@@ -36,6 +36,51 @@
         </section>
     </main>
 
+    <div id="workspaceScreen" class="workspace-screen hidden">
+        <div class="workspace-card">
+
+            <div class="workspace-brand">
+                <p class="eyebrow">COLLEGE OF ENGINEERING</p>
+                <h1>SCHEDULE STUDIO</h1>
+                <p>Build and manage your class schedules by academic period.</p>
+            </div>
+
+            <div class="workspace-welcome">
+                <p class="eyebrow">WELCOME BACK</p>
+                <h2 id="workspaceWelcomeName">Let's get started.</h2>
+                <p>
+                    Choose an existing scheduling period or create a new one
+                    to begin building your schedule.
+                </p>
+            </div>
+
+            <div class="workspace-actions">
+                <button
+                    type="button"
+                    id="createSchedulePeriodBtn"
+                    class="btn-add">
+                    + Create New Scheduling Period
+                </button>
+            </div>
+
+            <div class="workspace-existing">
+                <div class="workspace-section-heading">
+                    <div>
+                        <p class="eyebrow">YOUR WORKSPACES</p>
+                        <h3>Scheduling Periods</h3>
+                    </div>
+                </div>
+
+                <div id="workspacePeriodList" class="workspace-period-list">
+                    <p class="empty-message">
+                        No scheduling periods yet.
+                    </p>
+                </div>
+            </div>
+
+        </div>
+    </div>
+
     <div id="appShell" class="container hidden">
         <header class="app-header">
             <div class="brand">
@@ -47,9 +92,33 @@
                 </div>
             </div>
             <div id="remoteControls" class="remote-controls">
+
                 <div id="userIdentity" class="remote-status hidden"></div>
-                <button id="ownerBackToUsers" type="button" class="btn-clear owner-back-btn hidden">← Back to users</button>
-                <button id="signOutBtn" class="btn-view btn-compact hidden">Sign out</button>
+
+                <div
+                    id="activeSchedulePeriodHeader"
+                    class="active-schedule-period-header hidden">
+                </div>
+
+                <button
+                    id="ownerBackToUsers"
+                    type="button"
+                    class="btn-clear owner-back-btn hidden">
+                    ←
+                </button>
+                <button
+                    id="changeSchedulePeriodBtn"
+                    type="button"
+                    class="btn-clear change-schedule-period-btn">
+                    ←
+                </button>
+
+                <button
+                    id="signOutBtn"
+                    class="btn-view btn-compact hidden">
+                    Sign out
+                </button>
+
             </div>
         </header>
 
@@ -72,43 +141,39 @@
             <div class="form-panel">
                 <div class="panel-heading">
                     <div><p class="eyebrow">SCHEDULER</p></div>
-                    <span class="safe-badge">CONFLICT CHECK ON</span>
                 </div>
                 <p class="panel-description"></p>
                 <form id="scheduleForm">
-                    <div class="form-group">
-                        <label for="termSelect">Term:</label>
-                        <select id="termSelect" required>
-                            <option value="">-- Select Term --</option>
-                            <option value="1st semester">1st Semester</option>
-                            <option value="2nd semester">2nd Semester</option>
-                            <option value="summer">Summer</option>
-                        </select>
-                    </div>
-
                     <div class="form-group">
                         <label for="teacherSelect">Teacher:</label>
                         <select id="teacherSelect" required>
                             <option value="">-- Select Teacher --</option>
                         </select>
                     </div>
-                    <div class="schedule-course-row">
-                        <div class="form-group">
-                            <label for="courseSelect">Course &amp; Year:</label>
-                            <select id="courseSelect" required>
-                                <option value="">-- Select Course &amp; Year --</option>
-                            </select>
+                    <div class="form-group">
+                        <label for="classSectionSelect">Class Section(s):</label>
+
+                        <div class="class-section-combobox">
+                            <button
+                                type="button"
+                                id="classSectionSelect"
+                                class="class-section-select"
+                                aria-expanded="false"
+                                aria-controls="classSectionOptions">
+                                <span id="classSectionSelectText">-- Select Class Section(s) --</span>
+                                <span class="class-section-select-arrow">▼</span>
+                            </button>
+
+                            <div
+                                id="classSectionOptions"
+                                class="class-section-options"
+                                hidden>
+                            </div>
                         </div>
 
-                        <div class="form-group">
-                            <label for="sectionInput">Section:</label>
-                            <select id="sectionInput" required>
-                                <option value="">-- Select Section --</option>
-                                <option value="A">A</option>
-                                <option value="B">B</option>
-                                <option value="C">C</option>
-                                <option value="IRREGULAR">IRREGULAR</option>
-                            </select>
+                        <div
+                            id="selectedClassSectionSummary"
+                            class="selected-class-section-summary">
                         </div>
                     </div>
                     
@@ -289,7 +354,7 @@
         </div>
     </div>
 
-    <div id="teacherScheduleModal" class="modal hidden">
+    <div id="teacherScheduleModal" class="modal hidden" aria-hidden="true">
         <div class="modal-content">
             <button id="closeScheduleModal" class="close-modal">×</button>
             <h2 id="modalTeacherName">Teacher Schedule</h2>
@@ -300,6 +365,78 @@
                 <button id="viewLoadBtn" class="btn-action">Teaching Load</button>
             </div>
             <div id="scheduleGridContainer"></div>
+        </div>
+    </div>
+
+    <div id="schedulePeriodModal" class="modal hidden" aria-hidden="true">
+        <div class="modal-content schedule-period-modal-content"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="schedulePeriodModalTitle">
+
+            <button
+                id="schedulePeriodModalClose"
+                class="close-modal"
+                type="button"
+                aria-label="Close">
+                ×
+            </button>
+
+            <p class="eyebrow">NEW WORKSPACE</p>
+            <h2 id="schedulePeriodModalTitle">Create Scheduling Period</h2>
+
+            <p class="schedule-period-modal-description">
+                Choose the school year and semester for the schedule you are about to build.
+            </p>
+
+            <form id="schedulePeriodForm">
+
+                <div class="form-group">
+                    <label for="schedulePeriodSchoolYear">
+                        School Year
+                    </label>
+                    <input
+                        id="schedulePeriodSchoolYear"
+                        type="text"
+                        placeholder="e.g., 2026 – 2027"
+                        maxlength="20"
+                        required>
+                </div>
+
+                <div class="form-group">
+                    <label for="schedulePeriodTerm">
+                        Semester
+                    </label>
+                    <select id="schedulePeriodTerm" required>
+                        <option value="">-- Select Semester --</option>
+                        <option value="1st semester">1st Semester</option>
+                        <option value="2nd semester">2nd Semester</option>
+                        <option value="summer">Summer</option>
+                    </select>
+                </div>
+
+                <p
+                    id="schedulePeriodMessage"
+                    class="edit-form-message"
+                    role="alert">
+                </p>
+
+                <div class="schedule-form-actions">
+                    <button
+                        id="schedulePeriodCancel"
+                        type="button"
+                        class="btn-clear">
+                        Cancel
+                    </button>
+
+                    <button
+                        type="submit"
+                        class="btn-add">
+                        Create & Continue
+                    </button>
+                </div>
+
+            </form>
         </div>
     </div>
 

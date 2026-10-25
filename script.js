@@ -10,6 +10,10 @@ class ScheduleManager {
         this.subjectDetails = this.loadListDetails('subjectDetails');
         this.roomDetails = this.loadListDetails('roomDetails');
         this.schoolYear = this.loadSchoolYear();
+
+        this.schedulePeriods = [];
+        this.activeSchedulePeriod = null;
+        this.workspaceScreenVisible = false;
         this.currentProfile = null;
         this.isOwner = false;
         this.ownerProfiles = [];
@@ -18,10 +22,15 @@ class ScheduleManager {
         this.ownerAllSchedules = [];
         this.ownerCatalog = {};
         this.syncRequestId = 0;
+        this.periodRequestId = 0;
+        this.ownerRequestId = 0;
+        this.editingCombinedClassId = null;
         this.curriculumCatalog = Array.isArray(window.CURRICULUM_CATALOG)
             ? window.CURRICULUM_CATALOG.map(entry => ({ ...entry, term: entry.term === '3rd term' ? 'summer' : entry.term }))
             : [];
         this.selectedCurriculumEntry = null;
+        this.selectedClassSections = [];
+        this.classSectionSearchQuery = '';
         this.term = '';
         this.teacherViewSearch = '';
         this.teacherScheduleSearch = '';
@@ -65,6 +74,7 @@ class ScheduleManager {
         this.renderRoomBuildingOptions();
         this.renderSubjectOptions();
         this.renderCourseOptions();
+        this.renderClassSectionOptions();
         this.renderSectionScheduleOptions();
         this.checkPrereqs();
         this.initializeAuth();
@@ -72,20 +82,58 @@ class ScheduleManager {
 
     setupEventListeners() {
         document.getElementById('scheduleForm').addEventListener('submit', (e) => this.handleAddSchedule(e));
-        document.getElementById('saveSchoolYearBtn')?.addEventListener('click', () => this.saveSchoolYearSetting());
-        document.getElementById('termSelect')?.addEventListener('change', e => {
-            this.term = e.target.value;
-            this.renderTeacherOptions();
-            this.renderCourseOptions();
-            this.renderSubjectOptions();
-            this.checkPrereqs();
+        const classSectionButton = document.getElementById('classSectionSelect');
+        const classSectionOptions = document.getElementById('classSectionOptions');
+        classSectionButton?.addEventListener('click', () => {
+            if (classSectionButton.disabled) return;
+
+            const isOpen =
+                !classSectionOptions?.hidden;
+
+            if (classSectionOptions) {
+                classSectionOptions.hidden = isOpen;
+            }
+
+            classSectionButton.setAttribute(
+                'aria-expanded',
+                String(!isOpen)
+            );
         });
+        document.addEventListener('click', event => {
+            const container = document.querySelector('.class-section-combobox');
+            const button = document.getElementById('classSectionSelect');
+            const list = document.getElementById('classSectionOptions');
+
+            if (
+                !container ||
+                !button ||
+                !list ||
+                container.contains(event.target)
+            ) {
+                return;
+            }
+
+            list.hidden = true;
+
+            button.setAttribute(
+                'aria-expanded',
+                'false'
+            );
+        });
+        document.getElementById('saveSchoolYearBtn')?.addEventListener('click', () => this.saveSchoolYearSetting());
         document.getElementById('teacherSelect')?.addEventListener('change', () => {
             this.renderCourseOptions();
+            this.renderClassSectionOptions();
             this.checkPrereqs();
         });
         document.getElementById('courseSelect')?.addEventListener('change', () => {
             this.renderSubjectOptions();
+            this.checkPrereqs();
+        });
+        document.getElementById('sectionInput')?.addEventListener('input', () => {
+            this.renderSubjectOptions(
+                document.getElementById('subjectSelect')?.value || ''
+            );
             this.checkPrereqs();
         });
         document.getElementById('subjectSelect')?.addEventListener('input', () => {
@@ -217,7 +265,61 @@ class ScheduleManager {
         if (syncBtn) syncBtn.addEventListener('click', () => this.syncFromRemote());
         const connectBtn = document.getElementById('connectRemoteBtn');
         if (connectBtn) connectBtn.addEventListener('click', () => this.promptForRemoteConfig());
+        const createSchedulePeriodBtn = document.getElementById('createSchedulePeriodBtn');
+        const schedulePeriodModal = document.getElementById('schedulePeriodModal');
+        const schedulePeriodModalClose = document.getElementById('schedulePeriodModalClose');
+        const schedulePeriodCancel = document.getElementById('schedulePeriodCancel');
 
+        const openSchedulePeriodModal = () => {
+            const schoolYearInput = document.getElementById('schedulePeriodSchoolYear');
+            const termInput = document.getElementById('schedulePeriodTerm');
+            const message = document.getElementById('schedulePeriodMessage');
+
+            if (schoolYearInput) {
+                schoolYearInput.value = this.schoolYear || '';
+            }
+
+            if (termInput) {
+                termInput.value = '';
+            }
+
+            if (message) {
+                message.textContent = '';
+            }
+
+            if (schedulePeriodModal) {
+                schedulePeriodModal.classList.remove('hidden');
+                schedulePeriodModal.setAttribute('aria-hidden', 'false');
+            }
+
+            schoolYearInput?.focus();
+        };
+
+        const closeSchedulePeriodModal = () => {
+            if (schedulePeriodModal) {
+                schedulePeriodModal.classList.add('hidden');
+                schedulePeriodModal.setAttribute('aria-hidden', 'true');
+            }
+        };
+
+        createSchedulePeriodBtn?.addEventListener(
+            'click',
+            openSchedulePeriodModal
+        );
+
+        schedulePeriodModalClose?.addEventListener(
+            'click',
+            closeSchedulePeriodModal
+        );
+
+        schedulePeriodCancel?.addEventListener(
+            'click',
+            closeSchedulePeriodModal
+        );
+        document.getElementById('schedulePeriodForm')?.addEventListener(
+            'submit',
+            e => this.handleCreateSchedulePeriod(e)
+        );
         const authForm = document.getElementById('authForm');
         if (authForm) authForm.addEventListener('submit', (e) => this.handleAuthSubmit(e));
         const resetPasswordForm = document.getElementById('resetPasswordForm');
@@ -251,6 +353,10 @@ class ScheduleManager {
         document.getElementById('ownerEditForm')?.addEventListener('submit', e => this.saveOwnerEdit(e));
         document.getElementById('ownerEditBuilding')?.addEventListener('change', () => this.renderEditRoomOptions());
         document.getElementById('ownerBackToUsers')?.addEventListener('click', () => this.exitOwnerUserView());
+        document.getElementById('changeSchedulePeriodBtn')
+        ?.addEventListener('click', () => {
+            this.changeSchedulePeriod();
+        });
     }
 
     async handleAddTeacher() {
@@ -423,6 +529,7 @@ class ScheduleManager {
         this.saveCourses();
         input.value = '';
         this.renderCourseOptions();
+        this.renderClassSectionOptions();
         this.renderSectionScheduleOptions();
         this.render();
         this.showNotification('Section added.', 'success');
@@ -432,81 +539,537 @@ class ScheduleManager {
     async handleAddSchedule(e) {
         e.preventDefault();
 
-        const teacherName = document.getElementById('teacherSelect').value;
-        const term = document.getElementById('termSelect').value;
-        const subject = document.getElementById('subjectSelect').value.trim();
-        const curriculumCourseYear = document.getElementById('courseSelect').value;
-        const section = document.getElementById('sectionInput').value.trim().toUpperCase();
-        const [program, yearText] = curriculumCourseYear.split(' - ');
-        const year = Number.parseInt(yearText, 10);
-        const courseYear = `${curriculumCourseYear}${section}`;
-        const curriculumEntry = this.getSelectedCurriculumEntry();
-        const subjectInfo = curriculumEntry || this.subjectDetails[subject] || {};
-        const courseCode = subjectInfo.code || subjectInfo.courseCode || '';
-        const parsedUnits = Number.parseInt(subjectInfo.units, 10);
-        const unitsVal = Number.isFinite(parsedUnits) ? parsedUnits : 3;
-        const slots = [...document.querySelectorAll('#scheduleSlots .schedule-slot')];
-        if (slots.some(slot => !slot.querySelector('input[name="days"]:checked'))) {
-            return this.showNotification('Select at least one day for every class meeting.', 'error');
+        if (!this.activeSchedulePeriod) {
+            this.showNotification(
+                'Please open a scheduling period before adding a schedule.',
+                'error'
+            );
+            return;
         }
-        const schedules = slots.flatMap((slot, index) => {
-            const legacyIds = { building: 'buildingSelect', room: 'roomSelect' };
-            const value = field => slot.querySelector(`[data-field="${field}"]`)?.value || document.getElementById(legacyIds[field] || field)?.value || '';
-            const room = value('room');
-            const roomInfo = this.roomDetails[room] || {};
-            const days = [...slot.querySelectorAll('input[name="days"]:checked')].map(input => input.value);
-            return days.map(day => ({ id: this.createLocalScheduleId(), ownerId: this.ownerViewingUserId || this.currentUser?.id || '', term, teacherName, program, year, section, subject: subjectInfo.name || subject, courseYear, courseCode, units: unitsVal, lecHours: subjectInfo.lecHours ?? null, labHours: subjectInfo.labHours ?? null, delivery: subjectInfo.delivery || '', building: value('building') || roomInfo.building || '', overload: '', day, startTime: value('startTime'), endTime: value('endTime'), room }));
-        });
-        if (!curriculumCourseYear || !section) return this.showNotification('Select a course and enter a section.', 'error');
-        if (!/^[A-Z0-9-]+$/.test(section)) return this.showNotification('Section may only contain letters, numbers, or hyphens.', 'error');
-        const lecHours = Number(subjectInfo.lecHours) || 0;
-        const labHours = Number(subjectInfo.labHours) || 0;
-        // Lecture: 1 curriculum hour = 1 actual scheduled hour.
-        // Laboratory: 1 lab unit/hour entry = 3 actual scheduled hours.
-        const expectedWeeklyMinutes = (lecHours * 60) + (labHours * 3 * 60);
-        const scheduledWeeklyMinutes = schedules.reduce((total, schedule) => total + this.timeToMinutes(schedule.endTime) - this.timeToMinutes(schedule.startTime), 0);
-        if (expectedWeeklyMinutes > 0 && scheduledWeeklyMinutes !== expectedWeeklyMinutes) {
-            return this.showNotification(`${subjectInfo.name || subject} requires ${expectedWeeklyMinutes / 60} hour${expectedWeeklyMinutes === 60 ? '' : 's'} per week; your selected meetings total ${scheduledWeeklyMinutes / 60} hour${scheduledWeeklyMinutes === 60 ? '' : 's'}.`, 'error');
+
+        const teacherName =
+            document.getElementById('teacherSelect')?.value || '';
+
+        const term =
+            this.activeSchedulePeriod?.term || '';
+
+        const subject =
+            document.getElementById('subjectSelect')?.value.trim() || '';
+
+        const selectedSections =
+            this.getSelectedClassSectionParts();
+
+        if (!teacherName) {
+            return this.showNotification(
+                'Select a teacher.',
+                'error'
+            );
         }
-        if (!this.courses.includes(courseYear)) {
-            if (!(await this.addListItemToRemote('courses', courseYear))) return;
-            this.courses.push(courseYear);
-            this.saveCourses();
-            this.renderSectionScheduleOptions();
+
+        if (!selectedSections.length) {
+            return this.showNotification(
+                'Select at least one class section.',
+                'error'
+            );
         }
-        const pending = [];
-        for (const schedule of schedules) {
-            const validationError = this.validateSchedule(schedule);
-            if (validationError) return this.showNotification(validationError, 'error');
-            const conflictCheck = this.checkConflicts(schedule, null, pending);
-            if (conflictCheck.hasConflict) {
-                const details = conflictCheck.conflicts.map(c => `${c.type}: ${c.message}`).join(' ');
-                return this.showNotification(`⚠️ Conflict detected: ${details}`, 'error');
+
+        if (!subject) {
+            return this.showNotification(
+                'Select a subject.',
+                'error'
+            );
+        }
+
+        /*
+        * A combined class is one teaching assignment even when
+        * it contains multiple programs/sections.
+        *
+        * Therefore, check the teacher's 6-subject limit using
+        * the subject itself rather than counting every selected
+        * section as another subject.
+        */
+        const existingSubjectKeys =
+            this.getTeacherDistinctSubjects(teacherName);
+
+        const combinedSubjectKey =
+            `COMBINED:${String(subject).trim().toUpperCase()}`;
+
+        const subjectAlreadyAssigned =
+            existingSubjectKeys.some(key =>
+                key === this.getSubjectEquivalencyKey(
+                    subject,
+                    selectedSections[0].courseYear.split(' - ')[0]
+                ) ||
+                key === `COMMON:${String(subject).trim().toUpperCase()}` ||
+                key === combinedSubjectKey
+            );
+
+        if (
+            !subjectAlreadyAssigned &&
+            existingSubjectKeys.length >= 6
+        ) {
+            return this.showNotification(
+                `${teacherName} already has 6 subjects in this scheduling period.`,
+                'error'
+            );
+        }
+
+        const slots =
+            [...document.querySelectorAll(
+                '#scheduleSlots .schedule-slot'
+            )];
+
+        if (!slots.length) {
+            return this.showNotification(
+                'Add at least one class meeting.',
+                'error'
+            );
+        }
+
+        if (
+            slots.some(
+                slot =>
+                    !slot.querySelector(
+                        'input[name="days"]:checked'
+                    )
+            )
+        ) {
+            return this.showNotification(
+                'Select at least one day for every class meeting.',
+                'error'
+            );
+        }
+
+        // A combined identifier is meaningful only when multiple sections
+        // make up one logical class. New single-section assignments remain
+        // standalone, matching the legacy nullable-column design.
+        const combinedClassId = selectedSections.length > 1
+            ? (typeof crypto !== 'undefined' &&
+                typeof crypto.randomUUID === 'function'
+                ? crypto.randomUUID()
+                : this.createLocalScheduleId())
+            : null;
+
+        const ownerId =
+            this.ownerViewingUserId ||
+            this.currentUser?.id ||
+            '';
+
+        const schedules = [];
+
+        /*
+        * Build one schedule row for every selected section
+        * and every selected meeting day.
+        */
+        for (const selectedSection of selectedSections) {
+            const courseYear =
+                selectedSection.courseYear;
+
+            const section =
+                selectedSection.section;
+
+            const [program, yearText] =
+                courseYear.split(' - ');
+
+            const year =
+                Number.parseInt(yearText, 10);
+
+            /*
+            * Use the selected program's prospectus entry, preferring
+            * the section year and active term when that offering exists.
+            */
+            const normalizedProgram =
+                this.normalizeProgram(program);
+
+            const normalizedSubject =
+                subject.trim().toLowerCase();
+
+            const curriculumEntry =
+                this.getCurriculumEntryForProgramSubject(
+                    normalizedSubject,
+                    normalizedProgram,
+                    year
+                );
+
+            if (!curriculumEntry) {
+                return this.showNotification(
+                    `${subject} is not in the curriculum for ${courseYear}.`,
+                    'error'
+                );
             }
+
+            const requiredWeeklyMinutes =
+                this.getCurriculumEntryRequiredWeeklyMinutes(curriculumEntry);
+
+            const existingWeeklyMinutes =
+                this.getSectionSubjectScheduledMinutes(
+                    courseYear + section,
+                    curriculumEntry.name || subject
+                );
+
+            /*
+            * Build the new meetings for this section only.
+            */
+            const sectionSchedules =
+                slots.flatMap(slot => {
+                    const legacyIds = {
+                        building: 'buildingSelect',
+                        room: 'roomSelect'
+                    };
+
+                    const value = field =>
+                        slot.querySelector(
+                            `[data-field="${field}"]`
+                        )?.value ||
+                        document.getElementById(
+                            legacyIds[field] || field
+                        )?.value ||
+                        '';
+
+                    const room =
+                        value('room');
+
+                    const roomInfo =
+                        this.roomDetails[room] || {};
+
+                    const days =
+                        [
+                            ...slot.querySelectorAll(
+                                'input[name="days"]:checked'
+                            )
+                        ].map(input => input.value);
+
+                    return days.map(day => ({
+                        id: this.createLocalScheduleId(),
+
+                        ownerId,
+
+                        schedulePeriodId:
+                            this.activeSchedulePeriod.id,
+
+                        combinedClassId,
+
+                        term,
+
+                        teacherName,
+
+                        program:
+                            normalizedProgram,
+
+                        year,
+
+                        section,
+
+                        subject:
+                            curriculumEntry.name || subject,
+
+                        courseYear:
+                            `${courseYear}${section}`,
+
+                        courseCode:
+                            curriculumEntry.code ||
+                            curriculumEntry.courseCode ||
+                            '',
+
+                        units:
+                            Number.isFinite(
+                                Number.parseInt(
+                                    curriculumEntry.units,
+                                    10
+                                )
+                            )
+                                ? Number.parseInt(
+                                    curriculumEntry.units,
+                                    10
+                                )
+                                : 3,
+
+                        lecHours:
+                            curriculumEntry.lecHours ??
+                            null,
+
+                        labHours:
+                            curriculumEntry.labHours ??
+                            null,
+
+                        delivery:
+                            curriculumEntry.delivery ||
+                            '',
+
+                        building:
+                            value('building') ||
+                            roomInfo.building ||
+                            '',
+
+                        overload: '',
+
+                        day,
+
+                        startTime:
+                            value('startTime'),
+
+                        endTime:
+                            value('endTime'),
+
+                        room
+                    }));
+                });
+
+            /*
+            * Calculate the hours being added to this section.
+            */
+            const newWeeklyMinutes =
+                sectionSchedules.reduce(
+                    (total, schedule) => {
+                        const start =
+                            this.timeToMinutes(
+                                schedule.startTime
+                            );
+
+                        const end =
+                            this.timeToMinutes(
+                                schedule.endTime
+                            );
+
+                        if (
+                            !Number.isFinite(start) ||
+                            !Number.isFinite(end) ||
+                            end <= start
+                        ) {
+                            return total;
+                        }
+
+                        return total + (end - start);
+                    },
+                    0
+                );
+
+            /*
+            * IMPORTANT:
+            * Partial scheduling is allowed.
+            *
+            * The new meetings only need to stay within the
+            * remaining weekly hours for this particular section.
+            */
+            if (requiredWeeklyMinutes > 0) {
+                const totalAfterAdding =
+                    existingWeeklyMinutes +
+                    newWeeklyMinutes;
+
+                if (
+                    totalAfterAdding >
+                    requiredWeeklyMinutes
+                ) {
+                    const remainingMinutes =
+                        Math.max(
+                            0,
+                            requiredWeeklyMinutes -
+                            existingWeeklyMinutes
+                        );
+
+                    return this.showNotification(
+                        `${curriculumEntry.name || subject} for ${courseYear}${section} has only ${remainingMinutes / 60} hour${remainingMinutes === 60 ? '' : 's'} remaining this week.`,
+                        'error'
+                    );
+                }
+            }
+
+            schedules.push(...sectionSchedules);
+        }
+
+        /*
+        * Validate every generated schedule row.
+        */
+        const pending = [];
+
+        for (const schedule of schedules) {
+            const validationError =
+                this.validateSchedule(schedule);
+
+            if (validationError) {
+                return this.showNotification(
+                    validationError,
+                    'error'
+                );
+            }
+
+            const conflictCheck =
+                this.checkConflicts(
+                    schedule,
+                    null,
+                    pending
+                );
+
+            if (conflictCheck.hasConflict) {
+                const details =
+                    conflictCheck.conflicts
+                        .map(
+                            conflict =>
+                                `${conflict.type}: ${conflict.message}`
+                        )
+                        .join(' ');
+
+                return this.showNotification(
+                    `⚠️ Conflict detected: ${details}`,
+                    'error'
+                );
+            }
+
             pending.push(schedule);
         }
 
+        /*
+        * Save all section rows together.
+        */
         if (this.remoteEnabled) {
-            const ownerId = this.ownerViewingUserId || this.currentUser?.id;
-            const rows = schedules.map(schedule => ({ owner_id: ownerId, term: schedule.term, program: schedule.program, year: schedule.year, section: schedule.section, teacher_name: schedule.teacherName, subject: schedule.subject, course_year: schedule.courseYear, course_code: schedule.courseCode || null, units: schedule.units, lec_hours: schedule.lecHours, lab_hours: schedule.labHours, delivery: schedule.delivery || null, building: schedule.building || null, overload: null, day: schedule.day, start_time: schedule.startTime, end_time: schedule.endTime, room: schedule.room }));
-            const { data, error } = await this.supabase.from('schedules').insert(rows).select('id');
-            if (error || !data || data.length !== schedules.length) {
-                return this.showNotification(error?.message || 'Unable to save all class meetings. No local changes were made.', 'error');
+            const rows =
+                schedules.map(schedule => ({
+                    owner_id:
+                        ownerId,
+
+                    schedule_period_id:
+                        schedule.schedulePeriodId,
+
+                    combined_class_id:
+                        schedule.combinedClassId,
+
+                    term:
+                        schedule.term,
+
+                    program:
+                        schedule.program,
+
+                    year:
+                        schedule.year,
+
+                    section:
+                        schedule.section,
+
+                    teacher_name:
+                        schedule.teacherName,
+
+                    subject:
+                        schedule.subject,
+
+                    course_year:
+                        schedule.courseYear,
+
+                    course_code:
+                        schedule.courseCode ||
+                        null,
+
+                    units:
+                        schedule.units,
+
+                    lec_hours:
+                        schedule.lecHours,
+
+                    lab_hours:
+                        schedule.labHours,
+
+                    delivery:
+                        schedule.delivery ||
+                        null,
+
+                    building:
+                        schedule.building ||
+                        null,
+
+                    overload:
+                        null,
+
+                    day:
+                        schedule.day,
+
+                    start_time:
+                        schedule.startTime,
+
+                    end_time:
+                        schedule.endTime,
+
+                    room:
+                        schedule.room
+                }));
+
+            const {
+                data,
+                error
+            } =
+                await this.supabase
+                    .from('schedules')
+                    .insert(rows)
+                    .select(
+                        'id,combined_class_id'
+                    );
+
+            if (
+                error ||
+                !data ||
+                data.length !== schedules.length
+            ) {
+                return this.showNotification(
+                    error?.message ||
+                        'Unable to save all class meetings. No local changes were made.',
+                    'error'
+                );
             }
-            schedules.forEach((schedule, index) => { schedule.id = data[index].id; });
+
+            schedules.forEach(
+                (schedule, index) => {
+                    schedule.id =
+                        data[index].id;
+
+                    schedule.combinedClassId =
+                        data[index].combined_class_id ||
+                        schedule.combinedClassId;
+                }
+            );
         }
 
+        /*
+        * Add all generated rows to the local schedule list.
+        */
         this.schedules.push(...schedules);
-        if (this.ownerViewingUserId) this.ownerAllSchedules.push(...schedules);
+
+        if (this.ownerViewingUserId) {
+            this.ownerAllSchedules.push(
+                ...schedules
+            );
+        }
+
         this.saveSchedules();
-        this.showNotification(`✓ ${schedules.length} meeting${schedules.length === 1 ? '' : 's'} added successfully!`, 'success');
-        document.getElementById('scheduleForm').reset();
-        this.term = '';
+
+        this.showNotification(
+            selectedSections.length > 1
+                ? `✓ Combined class with ${selectedSections.length} sections added successfully!`
+                : '✓ Schedule added successfully!',
+            'success'
+        );
+
+        document
+            .getElementById('scheduleForm')
+            ?.reset();
+
+        this.term =
+            this.activeSchedulePeriod?.term ||
+            '';
+
+        this.selectedClassSections = [];
+
+        this.classSectionSearchQuery = '';
+
         this.resetScheduleSlots();
+
         this.renderTeacherOptions();
+
         this.renderCourseOptions();
+
+        this.renderClassSectionOptions();
+
         this.renderSubjectOptions();
+
         this.render();
+
         this.updateRoomOptions();
     }
 
@@ -538,52 +1101,167 @@ class ScheduleManager {
     }
 
     // returns structured conflict info
-    checkConflicts(newSchedule, excludeId = null, additionalSchedules = []) {
+    checkConflicts(newSchedule, excludeId = null, additionalSchedules = [], excludeIds = []) {
         const conflicts = [];
-        for (const schedule of [...this.schedules, ...additionalSchedules]) {
-            if (excludeId !== null && String(schedule.id) === String(excludeId)) continue;
-            if (!this.sameTerm(schedule.term, newSchedule.term)) continue;
-            if (schedule.day !== newSchedule.day) continue;
 
-            // teacher conflict
-            if (schedule.teacherName.toLowerCase() === newSchedule.teacherName.toLowerCase()) {
-                if (this.timesOverlap(schedule.startTime, schedule.endTime, newSchedule.startTime, newSchedule.endTime)) {
+        const excludedIds = new Set(excludeIds.map(id => String(id)));
+
+        const isSameCombinedMeeting = schedule =>
+            Boolean(
+                schedule.combinedClassId &&
+                newSchedule.combinedClassId &&
+                schedule.combinedClassId ===
+                    newSchedule.combinedClassId &&
+                this.getMeetingOccurrenceKey(schedule) ===
+                    this.getMeetingOccurrenceKey(newSchedule)
+            );
+
+        for (const schedule of [
+            ...this.schedules,
+            ...additionalSchedules
+        ]) {
+            if (
+                excludeId !== null &&
+                String(schedule.id) === String(excludeId)
+            ) {
+                continue;
+            }
+
+            if (excludedIds.has(String(schedule.id))) {
+                continue;
+            }
+
+            if (!this.sameTerm(schedule.term, newSchedule.term)) {
+                continue;
+            }
+
+            if (schedule.day !== newSchedule.day) {
+                continue;
+            }
+
+            /*
+            * Section rows for the same combined-class meeting are
+            * storage siblings, not competing assignments.
+            */
+            if (isSameCombinedMeeting(schedule)) {
+                continue;
+            }
+
+            // Teacher conflict
+            if (
+                String(schedule.teacherName || '')
+                    .trim()
+                    .toLowerCase() ===
+                String(newSchedule.teacherName || '')
+                    .trim()
+                    .toLowerCase()
+            ) {
+                if (
+                    this.timesOverlap(
+                        schedule.startTime,
+                        schedule.endTime,
+                        newSchedule.startTime,
+                        newSchedule.endTime
+                    )
+                ) {
                     conflicts.push({
                         type: 'Teacher conflict',
-                        message: `${schedule.teacherName} is already scheduled for ${schedule.subject} in ${schedule.room} from ${this.formatTime(schedule.startTime)} to ${this.formatTime(schedule.endTime)}.`
-                        
+                        message:
+                            `${schedule.teacherName} is already scheduled for ` +
+                            `${schedule.subject} in ${schedule.room} from ` +
+                            `${this.formatTime(schedule.startTime)} to ` +
+                            `${this.formatTime(schedule.endTime)}.`
                     });
                 }
             }
 
-            // room conflict
-            if (schedule.room.toLowerCase() === newSchedule.room.toLowerCase()) {
-                if (this.timesOverlap(schedule.startTime, schedule.endTime, newSchedule.startTime, newSchedule.endTime)) {
+            // Room conflict
+            if (
+                String(schedule.room || '')
+                    .trim()
+                    .toLowerCase() ===
+                String(newSchedule.room || '')
+                    .trim()
+                    .toLowerCase()
+            ) {
+                if (
+                    this.timesOverlap(
+                        schedule.startTime,
+                        schedule.endTime,
+                        newSchedule.startTime,
+                        newSchedule.endTime
+                    )
+                ) {
                     conflicts.push({
                         type: 'Room conflict',
-                        message: `${schedule.room} is already in use by ${schedule.teacherName} for ${schedule.subject} from ${this.formatTime(schedule.startTime)} to ${this.formatTime(schedule.endTime)}.`
+                        message:
+                            `${schedule.room} is already in use by ` +
+                            `${schedule.teacherName} for ${schedule.subject} ` +
+                            `from ${this.formatTime(schedule.startTime)} to ` +
+                            `${this.formatTime(schedule.endTime)}.`
                     });
                 }
             }
 
-            // A subject can meet multiple times per week, but not twice at an overlapping time.
-            if (schedule.courseYear && newSchedule.courseYear &&
-                schedule.courseYear.trim().toLowerCase() === newSchedule.courseYear.trim().toLowerCase() &&
-                schedule.subject.trim().toLowerCase() === newSchedule.subject.trim().toLowerCase() &&
-                schedule.day === newSchedule.day &&
-                this.timesOverlap(schedule.startTime, schedule.endTime, newSchedule.startTime, newSchedule.endTime)) {
+            // Subject conflict
+            if (
+                schedule.courseYear &&
+                newSchedule.courseYear &&
+                schedule.courseYear
+                    .trim()
+                    .toLowerCase() ===
+                    newSchedule.courseYear
+                        .trim()
+                        .toLowerCase() &&
+                schedule.subject &&
+                newSchedule.subject &&
+                schedule.subject
+                    .trim()
+                    .toLowerCase() ===
+                    newSchedule.subject
+                        .trim()
+                        .toLowerCase() &&
+                this.timesOverlap(
+                    schedule.startTime,
+                    schedule.endTime,
+                    newSchedule.startTime,
+                    newSchedule.endTime
+                )
+            ) {
                 conflicts.push({
                     type: 'Subject conflict',
-                    message: `${newSchedule.subject} is already scheduled for ${newSchedule.courseYear} on ${newSchedule.day} from ${this.formatTime(schedule.startTime)} to ${this.formatTime(schedule.endTime)}.`
+                    message:
+                        `${newSchedule.subject} is already scheduled for ` +
+                        `${newSchedule.courseYear} on ${newSchedule.day} ` +
+                        `from ${this.formatTime(schedule.startTime)} to ` +
+                        `${this.formatTime(newSchedule.endTime)}.`
                 });
             }
 
-            if (schedule.courseYear && newSchedule.courseYear &&
-                schedule.courseYear.trim().toLowerCase() === newSchedule.courseYear.trim().toLowerCase() &&
-                this.timesOverlap(schedule.startTime, schedule.endTime, newSchedule.startTime, newSchedule.endTime)) {
+            // Section conflict
+            if (
+                schedule.courseYear &&
+                newSchedule.courseYear &&
+                schedule.courseYear
+                    .trim()
+                    .toLowerCase() ===
+                    newSchedule.courseYear
+                        .trim()
+                        .toLowerCase() &&
+                this.timesOverlap(
+                    schedule.startTime,
+                    schedule.endTime,
+                    newSchedule.startTime,
+                    newSchedule.endTime
+                )
+            ) {
                 conflicts.push({
                     type: 'Section conflict',
-                    message: `${schedule.courseYear} already has ${schedule.subject} with ${schedule.teacherName} from ${this.formatTime(schedule.startTime)} to ${this.formatTime(schedule.endTime)}.`
+                    message:
+                        `${schedule.courseYear} already has ` +
+                        `${schedule.subject} with ${schedule.teacherName} ` +
+                        `from ${this.formatTime(schedule.startTime)} to ` +
+                        `${this.formatTime(schedule.endTime)}.`
                 });
             }
         }
@@ -591,14 +1269,18 @@ class ScheduleManager {
         // Deduplicate based on message
         const unique = [];
         const seen = new Set();
-        for (const c of conflicts) {
-            if (!seen.has(c.message)) {
-                unique.push(c);
-                seen.add(c.message);
+
+        for (const conflict of conflicts) {
+            if (!seen.has(conflict.message)) {
+                unique.push(conflict);
+                seen.add(conflict.message);
             }
         }
 
-        return { hasConflict: unique.length > 0, conflicts: unique };
+        return {
+            hasConflict: unique.length > 0,
+            conflicts: unique
+        };
     }
 
     timesOverlap(start1, end1, start2, end2) {
@@ -642,6 +1324,41 @@ class ScheduleManager {
         return this.schedules.filter(s => s.teacherName.toLowerCase() === teacherName.toLowerCase() && (term === null || (term ? this.sameTerm(s.term, term) : !s.term)));
     }
 
+    getLogicalScheduleRows(schedules) {
+        const rows = new Map();
+        schedules.forEach(schedule => {
+            const key = schedule.combinedClassId
+                ? `combined:${schedule.combinedClassId}:meeting:${this.getMeetingOccurrenceKey(schedule)}`
+                : `schedule:${schedule.id}`;
+            if (!rows.has(key)) {
+                rows.set(key, {
+                    ...schedule,
+                    displaySections: new Set()
+                });
+            }
+            if (schedule.courseYear) rows.get(key).displaySections.add(schedule.courseYear);
+        });
+        return [...rows.values()].map(schedule => ({
+            ...schedule,
+            displayCourseYear: [...schedule.displaySections]
+                .sort((a, b) => a.localeCompare(b))
+                .join(' + ') || schedule.courseYear
+        }));
+    }
+
+    getMeetingOccurrenceKey(schedule) {
+        const normalize = value =>
+            String(value ?? '').trim().toLowerCase();
+
+        return JSON.stringify([
+            normalize(schedule.day),
+            normalize(schedule.startTime),
+            normalize(schedule.endTime),
+            normalize(schedule.room),
+            normalize(schedule.building)
+        ]);
+    }
+
     sameTerm(first, second) {
         if (!first || !second) return !first && !second;
         return String(first).toLowerCase() === String(second).toLowerCase();
@@ -663,6 +1380,12 @@ class ScheduleManager {
             for (let j = i + 1; j < teacherSchedules.length; j++) {
                 const a = teacherSchedules[i];
                 const b = teacherSchedules[j];
+                if (
+                    a.combinedClassId &&
+                    a.combinedClassId === b.combinedClassId &&
+                    this.getMeetingOccurrenceKey(a) ===
+                        this.getMeetingOccurrenceKey(b)
+                ) continue;
                 if (a.day === b.day && this.timesOverlap(a.startTime, a.endTime, b.startTime, b.endTime)) {
                     conflicts.push({ schedule1: a, schedule2: b });
                 }
@@ -678,6 +1401,12 @@ class ScheduleManager {
             for (let j = i + 1; j < this.schedules.length; j++) {
                 const a = this.schedules[i];
                 const b = this.schedules[j];
+                if (
+                    a.combinedClassId &&
+                    a.combinedClassId === b.combinedClassId &&
+                    this.getMeetingOccurrenceKey(a) ===
+                        this.getMeetingOccurrenceKey(b)
+                ) continue;
                 if (a.day !== b.day || !this.timesOverlap(a.startTime, a.endTime, b.startTime, b.endTime)) continue;
                 if (!this.sameTerm(a.term, b.term)) continue;
                 if (same(a.teacherName, b.teacherName)) conflicts.push({ type: 'teacher', a, b });
@@ -690,18 +1419,26 @@ class ScheduleManager {
 
     async deleteSchedule(id) {
         const schedule = this.schedules.find(item => String(item.id) === String(id));
-        const label = schedule ? `${schedule.subject} for ${schedule.courseYear}` : 'this schedule';
-        const confirmed = await this.openActionModal({ mode: 'confirm', title: 'Delete schedule?', message: `Are you sure you want to delete ${label}? This action cannot be undone.`, confirmLabel: 'Delete schedule' });
+        if (!schedule) return;
+        const isCombined = Boolean(schedule.combinedClassId);
+        const group = isCombined ? this.schedules.filter(item => item.combinedClassId === schedule.combinedClassId) : [schedule];
+        const sections = [...new Set(group.map(item => item.courseYear).filter(Boolean))].join(' + ');
+        const label = isCombined ? `the combined class ${schedule.subject} (${sections})` : `${schedule.subject} for ${schedule.courseYear}`;
+        const confirmed = await this.openActionModal({ mode: 'confirm', title: isCombined ? 'Delete combined class?' : 'Delete schedule?', message: `Are you sure you want to delete ${label}? This action cannot be undone.`, confirmLabel: isCombined ? 'Delete combined class' : 'Delete schedule' });
         if (!confirmed) return;
         if (this.remoteEnabled && this.currentUser) {
-            const { error } = await this.supabase.from('schedules').delete().eq('id', id);
+            let query = this.supabase.from('schedules').delete();
+            query = isCombined ? query.eq('combined_class_id', schedule.combinedClassId) : query.eq('id', id);
+            query = query.eq('owner_id', schedule.ownerId || this.ownerViewingUserId || this.currentUser.id);
+            const { error } = await query;
             if (error) return this.showNotification(error.message || 'Unable to delete this schedule.', 'error');
         }
-        this.schedules = this.schedules.filter(s => s.id !== id);
-        if (this.ownerViewingUserId) this.ownerAllSchedules = this.ownerAllSchedules.filter(s => s.id !== id);
+        const deletedIds = new Set(group.map(item => String(item.id)));
+        this.schedules = this.schedules.filter(s => !deletedIds.has(String(s.id)));
+        if (this.ownerViewingUserId) this.ownerAllSchedules = this.ownerAllSchedules.filter(s => !deletedIds.has(String(s.id)));
         this.saveSchedules();
         this.render();
-        this.showNotification('Schedule deleted.', 'success');
+        this.showNotification(isCombined ? 'Combined class deleted.' : 'Schedule deleted.', 'success');
         this.updateRoomOptions();
     }
 
@@ -1032,10 +1769,17 @@ class ScheduleManager {
         const form = document.getElementById('scheduleForm');
         if (!form) return;
         form.reset();
-        this.term = '';
+        this.term = this.activeSchedulePeriod?.term || '';
+        this.selectedClassSections = [];
+        this.classSectionSearchQuery = '';
+        document.getElementById('classSectionOptions')?.setAttribute('hidden', '');
+        document.getElementById('classSectionSelect')?.setAttribute('aria-expanded', 'false');
+        this.closeSubjectOptions();
+        this.hideTeacherSchedule();
         this.resetScheduleSlots();
         this.renderTeacherOptions();
         this.renderCourseOptions();
+        this.renderClassSectionOptions();
         this.renderSubjectOptions();
         this.renderRoomOptions();
         const hint = document.getElementById('roomHint');
@@ -1085,7 +1829,12 @@ class ScheduleManager {
         const container = document.getElementById('scheduleSlots');
         if (!container) return;
         container.querySelectorAll('.schedule-slot:not(:first-child)').forEach(slot => slot.remove());
-        this.updateRoomOptions(container.querySelector('.schedule-slot'));
+        const firstSlot = container.querySelector('.schedule-slot');
+        firstSlot?.querySelectorAll('input, select').forEach(field => {
+            if (field.type === 'checkbox') field.checked = false;
+            else field.value = '';
+        });
+        this.updateRoomOptions(firstSlot);
     }
 
     renderStudentsView() {
@@ -1209,6 +1958,7 @@ class ScheduleManager {
         list.innerHTML = roomPage.items.map(group => {
             const safeRoom = group.room.replace(/\\/g, '\\\\').replace(/'/g, "\\'");
             const safeTerm = group.term.replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+            const logicalSchedules = this.getLogicalScheduleRows(group.schedules);
             return `<div class="teacher-card room-assignment-card">
                 <div class="student-section-header">
                     <div class="teacher-name">
@@ -1225,7 +1975,7 @@ class ScheduleManager {
                     </button>
                 </div>
                 <table class="schedule-table full-table"><thead><tr><th>Subject</th><th>Course &amp; Year</th><th>Teacher</th><th>Day</th><th>Time</th></tr></thead>
-                <tbody>${group.schedules.map(schedule => `<tr><td>${this.escapeHtml(schedule.subject)}</td><td>${this.escapeHtml(schedule.courseYear)}</td><td>${this.escapeHtml(schedule.teacherName)}</td><td>${this.escapeHtml(schedule.day)}</td><td>${this.formatTime(schedule.startTime)} - ${this.formatTime(schedule.endTime)}</td></tr>`).join('')}</tbody></table>
+                <tbody>${logicalSchedules.map(schedule => `<tr><td>${this.escapeHtml(schedule.subject)}</td><td>${this.escapeHtml(schedule.displayCourseYear)}</td><td>${this.escapeHtml(schedule.teacherName)}</td><td>${this.escapeHtml(schedule.day)}</td><td>${this.formatTime(schedule.startTime)} - ${this.formatTime(schedule.endTime)}</td></tr>`).join('')}</tbody></table>
                 
             </div>`;
         }).join('');
@@ -1243,7 +1993,7 @@ class ScheduleManager {
         const buildingListManage = document.getElementById('buildingListManage');
         const subjectListManage = document.getElementById('subjectListManage');
         const courseListManage = document.getElementById('courseListManage');
-            const term = document.getElementById('termSelect').value || null;
+        const term = this.activeSchedulePeriod?.term || this.term || null;
         if (this.teachers.length === 0) {
             teacherListManage.innerHTML = '<p class="empty-message">No teachers added yet.</p>';
         } else {
@@ -1705,20 +2455,15 @@ class ScheduleManager {
     async loadOwnerCatalog(ownerId) {
         if (this.remoteEnabled && this.supabase && ownerId) {
             const fresh = { teachers: [], subjects: [], rooms: [], courses: [] };
-            const columns = {
-                teachers: 'id,owner_id,name',
-                subjects: 'id,owner_id,name,course_code,units,lec_hours,lab_hours,delivery',
-                rooms: 'id,owner_id,name,building',
-                courses: 'id,owner_id,name'
-            };
             for (const table of Object.keys(fresh)) {
-                const { data, error } = await this.supabase.from(table).select(columns[table]).eq('owner_id', ownerId).order('name', { ascending: true });
+                const { data, error } = await this.selectCatalogRows(table, ownerId);
                 if (!error && Array.isArray(data)) fresh[table] = data;
             }
             this.ownerCatalog[ownerId] = fresh;
         }
         const catalog = this.ownerCatalog?.[ownerId];
         if (!catalog) return;
+        if (this.isOwner && this.ownerViewingUserId && this.ownerViewingUserId !== ownerId) return;
         this.teachers = catalog.teachers.map(row => String(row.name || '').toUpperCase()).filter(Boolean);
         this.subjects = catalog.subjects.map(row => String(row.name || '').toUpperCase()).filter(Boolean);
         this.courses = catalog.courses.map(row => String(row.name || '').toUpperCase()).filter(Boolean);
@@ -1738,17 +2483,46 @@ class ScheduleManager {
         catalog.rooms.forEach(row => { this.roomDetails[String(row.name || '').toUpperCase()] = { building: String(row.building || '').toUpperCase() }; });
         this.buildings = Array.from(new Set(catalog.rooms.map(row => String(row.building || '').toUpperCase()).filter(Boolean)));
         this.ensureUniqueSubjectColors();
-        this.renderTeacherOptions(); this.renderSubjectOptions(); this.renderCourseOptions(); this.renderBuildingOptions(); this.renderRoomOptions(); this.renderRoomBuildingOptions(); this.renderSectionScheduleOptions();
+        this.renderTeacherOptions(); this.renderSubjectOptions(); this.renderCourseOptions(); this.renderClassSectionOptions(); this.renderBuildingOptions(); this.renderRoomOptions(); this.renderRoomBuildingOptions(); this.renderSectionScheduleOptions();
+    }
+
+    async selectCatalogRows(table, ownerId = null) {
+        const columns = {
+            teachers: ['id,owner_id,name'],
+            subjects: ['id,owner_id,name,course_code,units,lec_hours,lab_hours,delivery', 'id,owner_id,name,course_code,units', 'id,owner_id,name'],
+            rooms: ['id,owner_id,name,building', 'id,owner_id,name'],
+            courses: ['id,owner_id,name']
+        }[table] || ['id,owner_id,name'];
+
+        let lastResult = { data: [], error: null };
+        for (const selectedColumns of columns) {
+            let query = this.supabase.from(table).select(selectedColumns);
+            if (ownerId) query = query.eq('owner_id', ownerId);
+            const result = await query.order('name', { ascending: true });
+            if (!result.error) return result;
+            lastResult = result;
+        }
+        return lastResult;
     }
 
     async selectOwnerUser(id) {
         if (!this.isOwner) return;
+        const requestId = ++this.ownerRequestId;
         this.ownerSelectedUserId = id;
         this.ownerViewingUserId = id;
         sessionStorage.setItem('scheduleStudioOwnerUser', id);
-        this.ownerAllSchedules = [...this.schedules];
-        this.schedules = this.ownerAllSchedules.filter(schedule => schedule.ownerId === id);
+        // Clear immediately: a selected user's workspace must never briefly
+        // render records belonging to the previously selected user.
+        this.schedules = [];
+
         await this.loadOwnerCatalog(id);
+        await this.loadSchedulePeriods(id);
+        if (requestId !== this.ownerRequestId || this.ownerViewingUserId !== id) return;
+        this.restoreSessionActiveSchedulePeriod(id);
+        if (this.activeSchedulePeriod) {
+            await this.refreshSchedulesForActivePeriod();
+            if (requestId !== this.ownerRequestId || this.ownerViewingUserId !== id) return;
+        }
         document.getElementById('appShell')?.classList.remove('owner-mode');
         document.getElementById('appShell')?.classList.add('owner-user-mode');
         document.getElementById('ownerView')?.classList.remove('active');
@@ -1758,12 +2532,13 @@ class ScheduleManager {
         document.querySelectorAll('.toggle-btn').forEach(btn => btn.classList.remove('active'));
         document.querySelector('.toggle-btn[data-view="teacher"]')?.classList.add('active');
         this.render();
-        this.renderTeacherOptions(); this.renderSubjectOptions(); this.renderCourseOptions(); this.renderBuildingOptions(); this.renderRoomOptions();
+        this.renderTeacherOptions(); this.renderSubjectOptions(); this.renderCourseOptions(); this.renderClassSectionOptions(); this.renderBuildingOptions(); this.renderRoomOptions();
     }
 
     exitOwnerUserView() {
         if (!this.isOwner) return;
-        this.schedules = this.ownerAllSchedules || [];
+        this.ownerRequestId++;
+        this.schedules = [];
         this.ownerViewingUserId = null;
         this.ownerSelectedUserId = null;
         this.loadOwnerCatalog(this.currentUser?.id);
@@ -1774,6 +2549,8 @@ class ScheduleManager {
         document.querySelectorAll('.view-content').forEach(panel => panel.classList.remove('active'));
         document.getElementById('ownerView')?.classList.add('active');
         this.render();
+        // Rebuild the owner overview from the authoritative remote scope.
+        this.syncFromRemote();
     }
 
     openOwnerEdit(id) {
@@ -1783,6 +2560,7 @@ class ScheduleManager {
     openScheduleEdit(id) {
         const schedule = this.schedules.find(s => String(s.id) === String(id));
         if (!schedule) return;
+        this.editingCombinedClassId = schedule.combinedClassId || null;
         const set = (field, value) => { const el = document.getElementById(field); if (el) el.value = value || ''; };
         const teacherSelect = document.getElementById('ownerEditTeacher');
         const subjectSelect = document.getElementById('ownerEditSubject');
@@ -1795,9 +2573,13 @@ class ScheduleManager {
             const buildings = [...new Set([...this.buildings, schedule.building].filter(Boolean))].sort((a, b) => a.localeCompare(b));
             buildingSelect.innerHTML = '<option value="">-- Select Building --</option>' + buildings.map(building => `<option value="${this.escapeHtml(building)}">${this.escapeHtml(building)}</option>`).join('');
         }
+        const sectionInput = document.getElementById('ownerEditSection');
+        if (sectionInput) sectionInput.disabled = Boolean(this.editingCombinedClassId);
         set('ownerEditId', schedule.id); set('ownerEditTerm', schedule.term || '1st semester'); set('ownerEditTeacher', schedule.teacherName); set('ownerEditSubject', schedule.subject); set('ownerEditSection', section); set('ownerEditDay', schedule.day); set('ownerEditStart', schedule.startTime); set('ownerEditEnd', schedule.endTime); set('ownerEditBuilding', schedule.building); this.renderEditRoomOptions(schedule.room);
-        this.showEditMessage('');
-        document.getElementById('ownerEditModal')?.classList.remove('hidden');
+        this.showEditMessage(this.editingCombinedClassId ? 'This is a combined class. Shared details are updated for every participating section.' : '');
+        const modal = document.getElementById('ownerEditModal');
+        modal?.classList.remove('hidden');
+        modal?.setAttribute('aria-hidden', 'false');
     }
 
     showEditMessage(message) {
@@ -1816,7 +2598,13 @@ class ScheduleManager {
         if (rooms.includes(selectedRoom)) select.value = selectedRoom;
     }
 
-    closeOwnerEdit() { document.getElementById('ownerEditModal')?.classList.add('hidden'); }
+    closeOwnerEdit() {
+        this.editingCombinedClassId = null;
+        document.getElementById('ownerEditSection')?.removeAttribute('disabled');
+        const modal = document.getElementById('ownerEditModal');
+        modal?.classList.add('hidden');
+        modal?.setAttribute('aria-hidden', 'true');
+    }
 
     async saveOwnerEdit(event) {
         event.preventDefault();
@@ -1829,19 +2617,33 @@ class ScheduleManager {
         const updated = { ...existing, term: document.getElementById('ownerEditTerm').value, teacherName: document.getElementById('ownerEditTeacher').value, subject: document.getElementById('ownerEditSubject').value, courseYear, program: parsedCourse?.program || existing.program, year: parsedCourse?.year || existing.year, section: selectedSection || existing.section, day: document.getElementById('ownerEditDay').value, startTime: document.getElementById('ownerEditStart').value, endTime: document.getElementById('ownerEditEnd').value, building: document.getElementById('ownerEditBuilding').value, room: document.getElementById('ownerEditRoom').value };
         const validation = this.validateSchedule(updated);
         if (validation) return this.showEditMessage(validation);
-        const conflict = this.checkConflicts(updated, existing.id);
-        if (conflict.hasConflict) return this.showEditMessage(`The edited class conflicts with another schedule: ${conflict.conflicts.map(item => item.message).join(' ')}`);
+        const group = this.editingCombinedClassId
+            ? this.schedules.filter(item =>
+                item.combinedClassId === this.editingCombinedClassId &&
+                this.getMeetingOccurrenceKey(item) ===
+                    this.getMeetingOccurrenceKey(existing)
+            )
+            : [existing];
+        const groupIds = group.map(item => item.id);
+        const conflicts = group.flatMap(item => {
+            const row = this.editingCombinedClassId
+                ? { ...item, term: updated.term, teacherName: updated.teacherName, subject: updated.subject, day: updated.day, startTime: updated.startTime, endTime: updated.endTime, building: updated.building, room: updated.room }
+                : updated;
+            return this.checkConflicts(row, null, [], groupIds).conflicts;
+        });
+        if (conflicts.length) return this.showEditMessage(`The edited class conflicts with another schedule: ${conflicts.map(item => item.message).join(' ')}`);
         if (this.remoteEnabled) {
-            let updateQuery = this.supabase.from('schedules').update({ term: updated.term, teacher_name: updated.teacherName, subject: updated.subject, course_year: updated.courseYear, day: updated.day, start_time: updated.startTime, end_time: updated.endTime, building: updated.building || null, room: updated.room }).eq('id', existing.id);
+            const changes = { term: updated.term, teacher_name: updated.teacherName, subject: updated.subject, day: updated.day, start_time: updated.startTime, end_time: updated.endTime, building: updated.building || null, room: updated.room };
+            if (!this.editingCombinedClassId) changes.course_year = updated.courseYear;
+            let updateQuery = this.supabase.from('schedules').update(changes);
+            updateQuery = this.editingCombinedClassId
+                ? updateQuery.in('id', groupIds)
+                : updateQuery.eq('id', existing.id);
             updateQuery = updateQuery.eq('owner_id', existing.ownerId || this.currentUser?.id);
             const { error } = await updateQuery;
             if (error) return this.showEditMessage(error.message || 'Unable to update schedule.');
         }
-        Object.assign(existing, updated); this.saveSchedules(); this.closeOwnerEdit(); this.render(); this.showNotification('Schedule updated.', 'success');
-    }
-
-    escapeHtml(value) {
-        return String(value ?? '').replace(/[&<>'"]/g, ch => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#39;', '"': '&quot;' }[ch]));
+        group.forEach(item => Object.assign(item, this.editingCombinedClassId ? { term: updated.term, teacherName: updated.teacherName, subject: updated.subject, day: updated.day, startTime: updated.startTime, endTime: updated.endTime, building: updated.building, room: updated.room } : updated)); this.saveSchedules(); this.closeOwnerEdit(); this.render(); this.showNotification(this.editingCombinedClassId ? 'Combined class updated.' : 'Schedule updated.', 'success');
     }
 
     showTeacherSchedule(teacherName, term = null) {
@@ -1876,7 +2678,8 @@ class ScheduleManager {
 
         document.getElementById('modalTeacherName').textContent = `${teacherName} — ${this.formatTerm(term)} — Plotted Schedule`;
         document.getElementById('scheduleGridContainer').innerHTML = grid;
-        document.getElementById('teacherScheduleModal').classList.remove('hidden');
+        document.getElementById('teacherScheduleModal')?.classList.remove('hidden');
+        document.getElementById('teacherScheduleModal')?.setAttribute('aria-hidden', 'false');
     }
 
     showSectionSchedule(sectionName, term = null) {
@@ -1894,7 +2697,8 @@ class ScheduleManager {
         const grid = this.buildScheduleGrid(sectionSchedules, daysToShow, slots, 'section');
         document.getElementById('modalTeacherName').textContent = `${sectionName} — Student Timetable`;
         document.getElementById('scheduleGridContainer').innerHTML = grid;
-        document.getElementById('teacherScheduleModal').classList.remove('hidden');
+        document.getElementById('teacherScheduleModal')?.classList.remove('hidden');
+        document.getElementById('teacherScheduleModal')?.setAttribute('aria-hidden', 'false');
     }
 
     showRoomSchedule(roomName, term = null) {
@@ -1911,7 +2715,8 @@ class ScheduleManager {
         const slots = this.generateTimeSlots().filter(slot => this.timeToMinutes(slot.start) < displayEnd);
         document.getElementById('modalTeacherName').textContent = `${roomName} — Room Timetable`;
         document.getElementById('scheduleGridContainer').innerHTML = this.buildScheduleGrid(roomSchedules, daysToShow, slots, 'room');
-        document.getElementById('teacherScheduleModal').classList.remove('hidden');
+        document.getElementById('teacherScheduleModal')?.classList.remove('hidden');
+        document.getElementById('teacherScheduleModal')?.setAttribute('aria-hidden', 'false');
     }
 
     formatOfficialProgramSection(sectionName) {
@@ -2019,7 +2824,9 @@ class ScheduleManager {
     }
 
     hideTeacherSchedule() {
-        document.getElementById('teacherScheduleModal').classList.add('hidden');
+        const modal = document.getElementById('teacherScheduleModal');
+        modal?.classList.add('hidden');
+        modal?.setAttribute('aria-hidden', 'true');
     }
 
     generateTimeSlots() {
@@ -2053,8 +2860,15 @@ class ScheduleManager {
             dayCells[day] = new Array(slotCount).fill(null);
         });
 
-        // For each schedule, compute start index and span (number of slots)
-        schedules.forEach(schedule => {
+        // A combined class is stored as one row per section. Collapse those
+        // sibling rows before placing cells so later rows cannot overwrite
+        // the same time/day cell.
+        const gridSchedules = audience === 'section'
+            ? schedules
+            : this.getLogicalScheduleRows(schedules);
+
+        // For each logical schedule, compute start index and span (number of slots)
+        gridSchedules.forEach(schedule => {
             const day = schedule.day;
             if (!dayCells[day]) return; // skip days not displayed
             const scheduleStart = this.timeToMinutes(schedule.startTime);
@@ -2077,7 +2891,7 @@ class ScheduleManager {
             const content = `
                 <div class="cell-content">
                     <div class="subject">${schedule.subject}</div>
-                    <div class="section">${audience === 'section' ? schedule.teacherName : schedule.courseYear}</div>
+                    <div class="section">${audience === 'section' ? schedule.teacherName : (schedule.displayCourseYear || schedule.courseYear)}</div>
                     ${building ? `<div class="building">${building}</div>` : ''}
                     <div class="room">${schedule.room}</div>
                 </div>
@@ -2350,12 +3164,23 @@ class ScheduleManager {
         
         const loadGroups = new Map();
         schedules.forEach(schedule => {
-            const courseIdentity = String(schedule.courseCode || schedule.subject || '').trim().toLowerCase();
             const sectionIdentity = String(schedule.courseYear || '').trim().toLowerCase();
             // Keep lecture and laboratory variants separate even when their descriptive titles match.
-            const key = `${courseIdentity}|||${sectionIdentity}|||${isLaboratory(schedule) ? 'lab' : 'lec'}`;
-            if (!loadGroups.has(key)) loadGroups.set(key, { schedule, meetings: [] });
-            loadGroups.get(key).meetings.push(schedule);
+            // Combined-class rows are section-level storage records for one
+            // teaching assignment. They must contribute one load row and one
+            // set of units, while standalone rows remain section-specific.
+            const classIdentity = schedule.combinedClassId
+                ? `combined:${schedule.combinedClassId}`
+                : `section:${sectionIdentity}`;
+            // combined_class_id is the full identity for a logical combined
+            // assignment; program-specific course codes must not split it.
+            const key = schedule.combinedClassId
+                ? `${classIdentity}|||${isLaboratory(schedule) ? 'lab' : 'lec'}`
+                : `${String(schedule.courseCode || schedule.subject || '').trim().toLowerCase()}|||${classIdentity}|||${isLaboratory(schedule) ? 'lab' : 'lec'}`;
+            if (!loadGroups.has(key)) loadGroups.set(key, { schedule, meetings: [], sections: new Set() });
+            const group = loadGroups.get(key);
+            group.meetings.push(schedule);
+            if (schedule.courseYear) group.sections.add(schedule.courseYear);
         });
 
         const loadEntries = [...loadGroups.values()].sort((a, b) => {
@@ -2365,7 +3190,7 @@ class ScheduleManager {
         });
 
         // Build one teaching-load row per subject/course-section, combining its weekly meetings.
-        const rows = loadEntries.map(({ schedule, meetings }) => {
+        const rows = loadEntries.map(({ schedule, meetings, sections }) => {
             const units = getUnits(schedule);
             const teachingHours = getTeachingHours(schedule);
             const orderedMeetings = meetings.slice().sort((a, b) => (dayOrder[a.day] || 0) - (dayOrder[b.day] || 0) || a.startTime.localeCompare(b.startTime));
@@ -2385,10 +3210,20 @@ class ScheduleManager {
             const days = orderedMeetings.map(item => item.day).filter((day, index, values) => values.indexOf(day) === index).join(', ');
             const buildings = orderedMeetings.map(item => item.building || '').filter((value, index, values) => value && values.indexOf(value) === index).join('<br>');
             const rooms = orderedMeetings.map(item => item.room || '').filter((value, index, values) => value && values.indexOf(value) === index).join('<br>');
+            const courseCode = schedule.combinedClassId
+                ? meetings
+                    .filter(item => String(item.courseCode || '').trim())
+                    .slice()
+                    .sort((a, b) =>
+                        String(a.courseYear || '').localeCompare(String(b.courseYear || '')) ||
+                        String(a.courseCode || '').localeCompare(String(b.courseCode || ''))
+                    )[0]?.courseCode || ''
+                : [...new Set(meetings.map(item => item.courseCode).filter(Boolean))].join(' / ');
+
             return `<tr>
-                <td style="border:1px solid #000; padding:6px;">${this.escapeHtml(schedule.courseCode || '')}</td>
+                <td style="border:1px solid #000; padding:6px;">${this.escapeHtml(courseCode)}</td>
                 <td style="border:1px solid #000; padding:6px;">${this.escapeHtml((this.formatDescriptiveTitle(schedule.subject)))}</td>
-                <td style="border:1px solid #000; padding:6px;">${this.escapeHtml(schedule.courseYear)}</td>
+                <td style="border:1px solid #000; padding:6px;">${this.escapeHtml([...sections].sort((a, b) => a.localeCompare(b)).join(' + '))}</td>
                 <td style="border:1px solid #000; padding:6px; text-align:center;">${units}</td>
                 <td style="border:1px solid #000; padding:6px; text-align:center;">${teachingHours}</td>
                 <td style="border:1px solid #000; padding:6px; text-align:center;"></td>
@@ -2634,6 +3469,188 @@ class ScheduleManager {
         };
     }
 
+    getSubjectEquivalencyKey(subject, program = '') {
+        const normalizedSubject = String(subject || '')
+            .trim()
+            .toUpperCase();
+
+        const normalizedProgram = this.normalizeProgram(program);
+
+        const equivalentSubjects = new Set([
+            'ART APPRECIATION',
+            'ETHICS',
+            'READINGS IN PHILIPPINE HISTORY',
+            'ENGINEERING DATA ANALYSIS',
+            'PATHFIT 1',
+            'PATHFIT 2',
+            'PATHFIT 3',
+            'PATHFIT 4',
+            'NSTP 1',
+            'NSTP 2',
+            'TECHNICAL WRITING'
+        ]);
+
+        if (equivalentSubjects.has(normalizedSubject)) {
+            return `COMMON:${normalizedSubject}`;
+        }
+
+        return `${normalizedProgram}:${normalizedSubject}`;
+    }
+
+    getSubjectRequiredWeeklyMinutes(subject, program = '') {
+        const normalizedSubject =
+            String(subject || '').trim().toLowerCase();
+
+        const normalizedProgram =
+            this.normalizeProgram(program);
+
+        const entry = this.curriculumCatalog.find(item =>
+            String(item.name || '').trim().toLowerCase() ===
+                normalizedSubject &&
+            (!normalizedProgram ||
+                this.normalizeProgram(item.program) === normalizedProgram)
+        );
+
+        if (!entry) {
+            return 0;
+        }
+
+        return this.getCurriculumEntryRequiredWeeklyMinutes(entry);
+    }
+
+    getCurriculumEntryRequiredWeeklyMinutes(entry) {
+        if (!entry) return 0;
+        const lecHours = Number(entry.lecHours) || 0;
+        const labHours = Number(entry.labHours) || 0;
+        // Lecture: 1 curriculum hour = 1 actual scheduled hour.
+        // Laboratory: 1 lab unit/hour entry = 3 actual scheduled hours.
+        return (lecHours * 60) + (labHours * 3 * 60);
+    }
+
+    getSectionSubjectScheduledMinutes(courseYear, subject) {
+        if (!courseYear || !subject || !this.activeSchedulePeriod) {
+            return 0;
+        }
+
+        const normalizedCourseYear =
+            String(courseYear).trim().toLowerCase();
+
+        const normalizedSubject =
+            String(subject).trim().toLowerCase();
+
+        return this.schedules
+            .filter(schedule =>
+                schedule.schedulePeriodId ===
+                this.activeSchedulePeriod.id
+            )
+            .filter(schedule =>
+                String(schedule.courseYear || '')
+                    .trim()
+                    .toLowerCase() === normalizedCourseYear
+            )
+            .filter(schedule =>
+                String(schedule.subject || '')
+                    .trim()
+                    .toLowerCase() === normalizedSubject
+            )
+            .reduce((total, schedule) => {
+                const start =
+                    this.timeToMinutes(schedule.startTime);
+
+                const end =
+                    this.timeToMinutes(schedule.endTime);
+
+                if (
+                    !Number.isFinite(start) ||
+                    !Number.isFinite(end) ||
+                    end <= start
+                ) {
+                    return total;
+                }
+
+                return total + (end - start);
+            }, 0);
+    }
+
+    getTeacherDistinctSubjects(teacherName) {
+        const normalizedTeacher = String(teacherName || '')
+            .trim()
+            .toUpperCase();
+
+        if (!normalizedTeacher || !this.activeSchedulePeriod) {
+            return [];
+        }
+
+        const subjectKeys = new Set();
+        const processedCombinedClasses = new Set();
+
+        this.schedules
+            .filter(schedule =>
+                String(schedule.teacherName || '')
+                    .trim()
+                    .toUpperCase() === normalizedTeacher
+            )
+            .filter(schedule =>
+                schedule.schedulePeriodId ===
+                this.activeSchedulePeriod.id
+            )
+            .forEach(schedule => {
+                if (schedule.combinedClassId) {
+                    if (processedCombinedClasses.has(schedule.combinedClassId)) return;
+                    processedCombinedClasses.add(schedule.combinedClassId);
+                    subjectKeys.add(
+                        `COMBINED:${String(schedule.subject || '')
+                            .trim()
+                            .toUpperCase()}`
+                    );
+                    return;
+                }
+                const key = this.getSubjectEquivalencyKey(
+                    schedule.subject,
+                    schedule.program
+                );
+
+                subjectKeys.add(key);
+            });
+
+        return Array.from(subjectKeys);
+    }
+
+    canTeacherTakeSubject(teacherName, subject, program = '') {
+        const existingSubjectKeys =
+            this.getTeacherDistinctSubjects(teacherName);
+
+        const newSubjectKey =
+            this.getSubjectEquivalencyKey(subject, program);
+
+        const combinedSubjectKey =
+            `COMBINED:${String(subject).trim().toUpperCase()}`;
+
+        if (existingSubjectKeys.includes(newSubjectKey) ||
+            existingSubjectKeys.includes(combinedSubjectKey)) {
+            return {
+                allowed: true,
+                isNewSubject: false,
+                subjectCount: existingSubjectKeys.length
+            };
+        }
+
+        // A new distinct subject would be added.
+        if (existingSubjectKeys.length >= 6) {
+            return {
+                allowed: false,
+                isNewSubject: true,
+                subjectCount: existingSubjectKeys.length
+            };
+        }
+
+        return {
+            allowed: true,
+            isNewSubject: true,
+            subjectCount: existingSubjectKeys.length + 1
+        };
+    }
+
     normalizeCourseYear(value) {
         const parsed = this.parseCourseYear(value);
 
@@ -2669,6 +3686,12 @@ class ScheduleManager {
     loadListDetails(key) {
         try { return JSON.parse(localStorage.getItem(this.storageKey(key))) || {}; }
         catch (e) { return {}; }
+    }
+    getSchedulePeriodStorageKey(ownerId) {
+        return `activeSchedulePeriod:${ownerId || 'unknown'}`;
+    }
+    getActivePeriodSessionKey(ownerId) {
+        return `activeSchedulePeriodSession:${ownerId || 'unknown'}`;
     }
     loadSchoolYear() { return localStorage.getItem(this.storageKey('schoolYear')) || '2026 – 2027'; }
     saveSchoolYearSetting() {
@@ -2809,80 +3832,317 @@ class ScheduleManager {
 
     renderTeacherOptions() {
         const sel = document.getElementById('teacherSelect');
+        if (!sel) return;
         sel.disabled = !this.term;
         sel.innerHTML = '<option value="">-- Select Teacher --</option>' + this.teachers.slice().sort((a,b)=>a.localeCompare(b)).map(t => `<option value="${t}">${t}</option>`).join('');
     }
 
-    renderSubjectOptions(query = '') {
-        const input = document.getElementById('subjectSelect');
-        const list = document.getElementById('subjectOptions');
-        if (!input || !list) return;
+    getSelectedClassSectionParts() {
+        return this.selectedClassSections
+            .map(value => {
+                const match = String(value || '')
+                    .trim()
+                    .match(/^(.+ - \d+)([A-Z]+|IRREGULAR)$/i);
 
-        input.disabled = !this.term || !document.getElementById('courseSelect')?.value;
+                if (!match) {
+                    return null;
+                }
 
-        const course = document.getElementById('courseSelect')?.value || '';
-        const [program, year] = course.split(' - ');
+                return {
+                    courseYear: match[1].trim(),
+                    section: match[2].toUpperCase()
+                };
+            })
+            .filter(Boolean);
+    }
 
-        // Subjects normally offered for the selected term,
-        // course, and year.
-        const recommendedEntries = this.getCurriculumEntries();
+    getCurriculumEntryForProgramSubject(subject, program, preferredYear = '') {
+        const normalizedSubject = String(subject || '').trim().toLowerCase();
+        const normalizedProgram = this.normalizeProgram(program);
+        const activeTerm = String(this.term || '').trim().toLowerCase();
 
-        const normalizedQuery = query.trim().toLowerCase();
-
-        // All curriculum subjects belonging to the selected program.
-        // Year level and term are intentionally NOT restricted here.
-        const programEntries = this.curriculumCatalog
+        return this.curriculumCatalog
             .filter(entry =>
-                (!program || entry.program === program)
+                String(entry.name || '').trim().toLowerCase() === normalizedSubject &&
+                this.normalizeProgram(entry.program) === normalizedProgram
             )
-            .sort((a, b) => a.name.localeCompare(b.name));
+            .sort((a, b) => {
+                const score = entry =>
+                    (String(entry.year) === String(preferredYear) ? 2 : 0) +
+                    (String(entry.term || '').trim().toLowerCase() === activeTerm ? 1 : 0);
+                const scoreDifference = score(b) - score(a);
+                if (scoreDifference) return scoreDifference;
 
-        // Normal subjects for the currently selected term/year.
-        const visibleRecommendedEntries = recommendedEntries.filter(
-            entry =>
-                !normalizedQuery ||
-                `${entry.name} ${entry.code}`.toLowerCase().includes(normalizedQuery)
+                return Number(a.year) - Number(b.year) ||
+                    String(a.term || '').localeCompare(String(b.term || '')) ||
+                    String(a.code || a.courseCode || '').localeCompare(
+                        String(b.code || b.courseCode || '')
+                    );
+            })[0] || null;
+    }
+
+    getCrossTermSubjectsForSelectedClassSections(query = '') {
+        const selectedSections =
+            this.getSelectedClassSectionParts();
+
+        if (!selectedSections.length || !query.trim()) {
+            return [];
+        }
+
+        const normalizedQuery =
+            query
+                .trim()
+                .toLowerCase()
+                .replace(/[^a-z0-9]/g, '');
+
+        const sectionPrograms = [
+            ...new Set(selectedSections.map(item => {
+                const [program] =
+                    item.courseYear.split(' - ');
+
+                return this.normalizeProgram(program);
+            }))
+        ];
+
+        const matchingSubjects = new Map();
+
+        this.curriculumCatalog.forEach(entry => {
+            const subjectName =
+                String(entry.name || '')
+                    .trim();
+
+            if (!subjectName) {
+                return;
+            }
+
+            const normalizedName =
+                subjectName.toLowerCase();
+
+            const normalizedSearchName =
+                `${subjectName} ${entry.code || ''}`
+                    .toLowerCase()
+                    .replace(/[^a-z0-9]/g, '');
+
+            if (!normalizedSearchName.includes(normalizedQuery)) {
+                return;
+            }
+
+            if (!matchingSubjects.has(normalizedName)) {
+                matchingSubjects.set(normalizedName, []);
+            }
+
+            matchingSubjects.get(normalizedName).push(entry);
+        });
+
+        const normalSubjectNames = new Set(
+            this.getSubjectsForSelectedClassSections()
+                .map(entry => String(entry.name || '').trim().toLowerCase())
         );
 
-        // Subjects outside the selected term/year that the user
-        // searched for. These are existing curriculum subjects,
-        // not newly created subjects.
-        const exceptionEntries = normalizedQuery
-            ? programEntries.filter(entry => {
-                const matchesSearch =
+        return [...matchingSubjects.entries()]
+            .map(([subjectName, matchingEntries]) => {
+                if (normalSubjectNames.has(subjectName)) return null;
+
+                const programEntries = sectionPrograms.map(program => {
+                    const selectedProgramEntries = this.curriculumCatalog.filter(entry =>
+                        String(entry.name || '').trim().toLowerCase() === subjectName &&
+                        this.normalizeProgram(entry.program) === program
+                    );
+
+                    if (!selectedProgramEntries.length) return null;
+
+                    return selectedProgramEntries;
+                });
+
+                if (programEntries.some(entries => !entries)) return null;
+                if (!matchingEntries.length) return null;
+
+                const [firstProgram, firstYear] =
+                    selectedSections[0].courseYear.split(' - ');
+                return this.getCurriculumEntryForProgramSubject(
+                    subjectName,
+                    firstProgram,
+                    firstYear
+                );
+            })
+            .filter(Boolean)
+            .sort((a, b) =>
+                a.name.localeCompare(b.name)
+            );
+    }
+
+    getSubjectsForSelectedClassSections() {
+        const selectedSections =
+            this.getSelectedClassSectionParts();
+
+        if (!selectedSections.length) {
+            return [];
+        }
+
+        const sectionPrograms = selectedSections
+            .map(item => {
+                const [program, year] =
+                    item.courseYear.split(' - ');
+
+                return {
+                    program: this.normalizeProgram(program),
+                    year: String(year).trim()
+                };
+            });
+
+        const activeTerm =
+            String(this.term || '')
+                .trim()
+                .toLowerCase();
+
+        const subjectNames = [
+            ...new Set(
+                this.curriculumCatalog
+                    .filter(entry =>
+                        !activeTerm ||
+                        String(entry.term || '')
+                            .trim()
+                            .toLowerCase() === activeTerm
+                    )
+                    .map(entry =>
+                        String(entry.name || '')
+                            .trim()
+                            .toLowerCase()
+                    )
+            )
+        ];
+
+        return subjectNames
+            .map(subjectName => {
+                const entriesForAllSections =
+                    sectionPrograms.map(section =>
+                        this.curriculumCatalog.filter(entry =>
+                            (
+                                !activeTerm ||
+                                String(entry.term || '')
+                                    .trim()
+                                    .toLowerCase() === activeTerm
+                            ) &&
+                            String(entry.name || '')
+                                .trim()
+                                .toLowerCase() === subjectName &&
+                            this.normalizeProgram(entry.program) ===
+                                section.program &&
+                            String(entry.year) === section.year
+                        )
+                    );
+
+                const existsForEverySection =
+                    entriesForAllSections.every(
+                        entries => entries.length > 0
+                    );
+
+                if (!existsForEverySection) {
+                    return null;
+                }
+
+                return entriesForAllSections[0][0];
+            })
+            .filter(Boolean)
+            .sort((a, b) =>
+                a.name.localeCompare(b.name)
+            );
+    }
+
+    renderSubjectOptions(query = '') {
+        const input =
+            document.getElementById('subjectSelect');
+
+        const list =
+            document.getElementById('subjectOptions');
+
+        if (!input || !list) return;
+
+        const hasSelectedSections =
+            Array.isArray(this.selectedClassSections) &&
+            this.selectedClassSections.length > 0;
+
+        input.disabled =
+            !this.term ||
+            !hasSelectedSections;
+
+        if (!hasSelectedSections) {
+            list.innerHTML =
+                '<div class="subject-options-empty">' +
+                'Select at least one class section first' +
+                '</div>';
+
+            this.updateSelectedSubjectDetails();
+            return;
+        }
+
+        const normalizedQuery =
+            query.trim().toLowerCase();
+
+        const availableEntries =
+            this.getSubjectsForSelectedClassSections();
+
+        const visibleEntries =
+            availableEntries.filter(entry =>
+                (!normalizedQuery ||
                     `${entry.name} ${entry.code}`
                         .toLowerCase()
-                        .includes(normalizedQuery);
+                        .includes(normalizedQuery)) &&
+                !this.isSubjectFullyScheduledForSelectedSections(entry)
+            );
 
-                const alreadyRecommended = recommendedEntries.some(
-                    recommended =>
-                        recommended.name.trim().toLowerCase() ===
-                        entry.name.trim().toLowerCase()
-                );
+        const crossTermEntries =
+            this.getCrossTermSubjectsForSelectedClassSections(
+                query
+            ).filter(entry =>
+                !this.isSubjectFullyScheduledForSelectedSections(entry)
+            );
 
-                return matchesSearch && !alreadyRecommended;
-            })
-            : [];
+        const options =
+            visibleEntries.map(entry => `
+                <button
+                    type="button"
+                    class="subject-option"
+                    role="option"
+                    data-subject-value="${this.escapeHtml(entry.name)}">
 
-        const recommendedOptions = visibleRecommendedEntries.map(entry =>
-            `<button type="button" class="subject-option" role="option"
-                data-subject-value="${this.escapeHtml(entry.name)}">
-                <strong>${this.escapeHtml(entry.name)}</strong>
-                <span>${this.escapeHtml(entry.code)} · ${this.escapeHtml(entry.delivery || 'Class')}</span>
-            </button>`
-        ).join('');
+                    <strong>
+                        ${this.escapeHtml(entry.name)}
+                    </strong>
 
-        const exceptionOptions = exceptionEntries.map(entry =>
-            `<button type="button" class="subject-option" role="option"
-                data-subject-value="${this.escapeHtml(entry.name)}">
-                <strong>${this.escapeHtml(entry.name)}</strong>
-                <span>${this.escapeHtml(entry.code)}</span>
-            </button>`
-        ).join('');
+                    <span>
+                        ${this.escapeHtml(entry.code)}
+                        ·
+                        ${this.escapeHtml(entry.delivery || 'Class')}
+                    </span>
+                </button>
+            `).join('');
 
-        list.innerHTML = (recommendedOptions || exceptionOptions)
-            ? `${recommendedOptions}${exceptionOptions}`
-            : '<div class="subject-options-empty">No matching subjects</div>';
+        const crossTermOptions =
+            crossTermEntries.map(entry => `
+                <button
+                    type="button"
+                    class="subject-option subject-option-exception"
+                    role="option"
+                    data-subject-value="${this.escapeHtml(entry.name)}">
+
+                    <strong>
+                        ${this.escapeHtml(entry.name)}
+                    </strong>
+
+                    <span>
+                        ${this.escapeHtml(entry.code)}
+                        ·
+                        Prospectus exception
+                    </span>
+                </button>
+            `).join('');
+
+        list.innerHTML =
+            options + crossTermOptions ||
+            '<div class="subject-options-empty">' +
+            'No matching subjects' +
+            '</div>';
 
         if (document.activeElement === input) {
             this.openSubjectOptions();
@@ -2907,6 +4167,247 @@ class ScheduleManager {
         input.setAttribute('aria-expanded', 'false');
     }
 
+    isSubjectFullyScheduledForSelectedSections(entry) {
+        const selectedSections = this.getSelectedClassSectionParts();
+        if (!entry || !selectedSections.length) return false;
+
+        return selectedSections.some(({ courseYear, section }) => {
+            const [program, yearText] = courseYear.split(' - ');
+            const normalizedProgram = this.normalizeProgram(program);
+            const normalizedName = String(entry.name || '').trim().toLowerCase();
+            const matchingEntries = this.curriculumCatalog.filter(item =>
+                String(item.name || '').trim().toLowerCase() === normalizedName &&
+                this.normalizeProgram(item.program) === normalizedProgram &&
+                String(item.year) === String(yearText)
+            );
+            const curriculumEntry = matchingEntries.find(item =>
+                String(item.term || '').trim().toLowerCase() === String(this.term || '').trim().toLowerCase()
+            ) || matchingEntries[0];
+            if (!curriculumEntry) return false;
+            const required = this.getCurriculumEntryRequiredWeeklyMinutes(curriculumEntry);
+            return required > 0 && this.getSectionSubjectScheduledMinutes(
+                `${courseYear}${section}`,
+                curriculumEntry.name
+            ) >= required;
+        });
+    }
+
+    getAvailableClassSections() {
+        const sectionValues = ['A', 'B', 'C', 'IRREGULAR'];
+
+        const courseYears = [
+            ...new Set(
+                this.curriculumCatalog
+                    .filter(entry =>
+                        !this.term ||
+                        entry.term === this.term
+                    )
+                    .map(entry =>
+                        `${entry.program} - ${entry.year}`
+                    )
+            )
+        ].sort((a, b) => a.localeCompare(b));
+
+        return courseYears.flatMap(courseYear =>
+            sectionValues.map(section => ({
+                value: `${courseYear}${section}`,
+                courseYear,
+                section
+            }))
+        );
+    }
+
+    renderClassSectionOptions() {
+        const list =
+            document.getElementById('classSectionOptions');
+
+        const button =
+            document.getElementById('classSectionSelect');
+
+        const buttonText =
+            document.getElementById('classSectionSelectText');
+
+        if (!list || !button || !buttonText) return;
+
+        const options = this.getAvailableClassSections();
+
+        if (!options.length) {
+            list.innerHTML = `
+                <div class="subject-options-empty">
+                    No class sections available
+                </div>
+            `;
+
+            button.disabled = true;
+            buttonText.textContent =
+                '-- No Class Sections Available --';
+
+            return;
+        }
+
+        button.disabled =
+            !this.term ||
+            !document.getElementById('teacherSelect')?.value;
+
+        const searchQuery =
+            String(this.classSectionSearchQuery || '')
+                .toLowerCase()
+                .replace(/[^a-z0-9]/g, '');
+
+        const filteredOptions =
+            options.filter(option => {
+                const searchableText =
+                    `${option.courseYear}${option.section}`
+                        .toLowerCase()
+                        .replace(/[^a-z0-9]/g, '');
+
+                return !searchQuery ||
+                    searchableText.includes(searchQuery);
+            });
+
+        const groups = new Map();
+
+        filteredOptions.forEach(option => {
+            if (!groups.has(option.courseYear)) {
+                groups.set(option.courseYear, []);
+            }
+
+            groups.get(option.courseYear).push(option);
+        });
+
+        const groupHtml = [...groups.entries()]
+            .map(([courseYear, sections]) => `
+                <div class="class-section-group">
+                    <div class="class-section-group-title">
+                        ${this.escapeHtml(courseYear)}
+                    </div>
+
+                    <div class="class-section-group-sections">
+                        ${sections.map(option => `
+                            <label class="class-section-option">
+                                <input
+                                    type="checkbox"
+                                    value="${this.escapeHtml(option.value)}"
+                                    data-course-year="${this.escapeHtml(option.courseYear)}"
+                                    data-section="${this.escapeHtml(option.section)}"
+                                    ${this.selectedClassSections.includes(option.value) ? 'checked' : ''}>
+                                <span>
+                                    ${this.escapeHtml(option.section)}
+                                </span>
+                            </label>
+                        `).join('')}
+                    </div>
+                </div>
+            `)
+            .join('');
+
+        list.innerHTML = `
+            <div class="class-section-search">
+                <input
+                    type="text"
+                    id="classSectionSearchInput"
+                    placeholder="Search course, year, or section..."
+                    value="${this.escapeHtml(this.classSectionSearchQuery || '')}"
+                    autocomplete="off">
+            </div>
+
+            <div class="class-section-results">
+                ${
+                    groupHtml ||
+                    `<div class="subject-options-empty">
+                        No matching class sections
+                    </div>`
+                }
+            </div>
+        `;
+
+        const searchInput =
+            document.getElementById('classSectionSearchInput');
+
+        searchInput?.addEventListener('input', event => {
+            this.classSectionSearchQuery =
+                event.target.value;
+
+            this.renderClassSectionOptions();
+
+            const newSearchInput =
+                document.getElementById(
+                    'classSectionSearchInput'
+                );
+
+            if (newSearchInput) {
+                newSearchInput.focus();
+
+                newSearchInput.setSelectionRange(
+                    newSearchInput.value.length,
+                    newSearchInput.value.length
+                );
+            }
+        });
+
+        list.querySelectorAll(
+            '.class-section-option input[type="checkbox"]'
+        ).forEach(input => {
+            input.addEventListener('change', () => {
+                this.handleClassSectionSelectionChange();
+            });
+        });
+
+        this.updateClassSectionSelectionDisplay();
+    }
+
+    handleClassSectionSelectionChange() {
+        const list =
+            document.getElementById('classSectionOptions');
+
+        if (!list) return;
+
+        this.selectedClassSections = [
+            ...list.querySelectorAll(
+                'input[type="checkbox"]:checked'
+            )
+        ].map(input => input.value);
+
+        this.updateClassSectionSelectionDisplay();
+
+        this.renderSubjectOptions();
+
+        this.checkPrereqs();
+    }
+
+    updateClassSectionSelectionDisplay() {
+        const buttonText =
+            document.getElementById('classSectionSelectText');
+
+        const summary =
+            document.getElementById('selectedClassSectionSummary');
+
+        if (!buttonText || !summary) return;
+
+        const selected = this.selectedClassSections;
+
+        if (!selected.length) {
+            buttonText.textContent =
+                '-- Select Class Section(s) --';
+
+            summary.textContent = '';
+            return;
+        }
+
+        if (selected.length <= 2) {
+            buttonText.textContent =
+                selected.join(', ');
+        } else {
+            buttonText.textContent =
+                `${selected.length} sections selected`;
+        }
+
+        summary.textContent =
+            selected.length === 1
+                ? '1 class section selected.'
+                : `${selected.length} class sections will be combined into one class.`;
+    }
+
     renderCourseOptions() {
         const sel = document.getElementById('courseSelect');
         if (!sel) return;
@@ -2929,26 +4430,79 @@ class ScheduleManager {
     }
 
     getSelectedCurriculumEntry() {
-        const subject = document.getElementById('subjectSelect')?.value.trim() || '';
+        const subject =
+            document.getElementById('subjectSelect')?.value.trim() || '';
 
-        const course = document.getElementById('courseSelect')?.value || '';
-        const [program] = course.split(' - ');
+        if (!subject) {
+            return null;
+        }
 
-        // Find the existing curriculum subject within the selected
-        // program, regardless of its normal year or term.
-        return this.curriculumCatalog.find(entry =>
-            entry.name.trim().toLowerCase() === subject.toLowerCase() &&
-            (!program || entry.program === program)
-        ) || null;
+        const selectedSections =
+            this.getSelectedClassSectionParts();
+
+        if (!selectedSections.length) {
+            return null;
+        }
+
+        const normalizedSubject = subject.toLowerCase();
+        const selectedPrograms = [
+            ...new Set(selectedSections.map(item => {
+                const [program] = item.courseYear.split(' - ');
+                return this.normalizeProgram(program);
+            }))
+        ];
+        const entriesByProgram = selectedPrograms.map(program =>
+            this.curriculumCatalog.filter(entry =>
+                String(entry.name || '').trim().toLowerCase() === normalizedSubject &&
+                this.normalizeProgram(entry.program) === program
+            )
+        );
+
+        if (entriesByProgram.some(entries => !entries.length)) {
+            return null;
+        }
+
+        const [firstProgram] = selectedSections[0].courseYear.split(' - ');
+        const [, firstYear] = selectedSections[0].courseYear.split(' - ');
+        return this.getCurriculumEntryForProgramSubject(
+            normalizedSubject,
+            firstProgram,
+            firstYear
+        );
     }
 
     updateSelectedSubjectDetails() {
         const entry = this.getSelectedCurriculumEntry();
         this.selectedCurriculumEntry = entry;
         const hint = document.getElementById('subjectDetailsHint');
-        if (hint) hint.textContent = entry
-            ? `${entry.code} · ${entry.delivery || 'Class'} · ${entry.units} unit${entry.units === 1 ? '' : 's'} · ${entry.lecHours} lec / ${entry.labHours} lab hour${entry.labHours === 1 ? '' : 's'}`
-            : '';
+        if (!hint) return;
+        if (!entry) {
+            hint.textContent = '';
+            return;
+        }
+        const remaining = this.getSelectedSubjectRemainingHours(entry);
+        hint.textContent = `${entry.code} · ${entry.delivery || 'Class'} · ${entry.units} unit${entry.units === 1 ? '' : 's'} · ${entry.lecHours} lec / ${entry.labHours} lab hour${entry.labHours === 1 ? '' : 's'}${remaining.length ? ` · ${remaining.join('; ')}` : ''}`;
+    }
+
+    getSelectedSubjectRemainingHours(entry) {
+        if (!entry) return [];
+        return this.getSelectedClassSectionParts().map(({ courseYear, section }) => {
+            const [program, yearText] = courseYear.split(' - ');
+            const normalizedName = String(entry.name || '').trim().toLowerCase();
+            const matching = this.curriculumCatalog.filter(item =>
+                String(item.name || '').trim().toLowerCase() === normalizedName &&
+                this.normalizeProgram(item.program) === this.normalizeProgram(program) &&
+                String(item.year) === String(yearText)
+            );
+            const subjectEntry = matching.find(item =>
+                String(item.term || '').trim().toLowerCase() === String(this.term || '').trim().toLowerCase()
+            ) || matching[0];
+            if (!subjectEntry) return '';
+            const requiredMinutes = this.getCurriculumEntryRequiredWeeklyMinutes(subjectEntry);
+            if (!requiredMinutes) return '';
+            const scheduledMinutes = this.getSectionSubjectScheduledMinutes(`${courseYear}${section}`, subjectEntry.name);
+            return `${courseYear}${section}: ${Math.max(0, requiredMinutes - scheduledMinutes) / 60}h remaining`;
+        }).filter(Boolean);
     }
 
     escapeHtml(value) {
@@ -2981,6 +4535,7 @@ class ScheduleManager {
     renderRoomOptions(slot = document.querySelector('#scheduleSlots .schedule-slot')) {
         if (!slot) return;
         const sel = slot.querySelector('[data-field="room"]') || document.getElementById('roomSelect');
+        if (!sel) return;
         const legacyIds = { building: 'buildingSelect', room: 'roomSelect' };
         const value = field => slot.querySelector(`[data-field="${field}"]`)?.value || document.getElementById(legacyIds[field] || field)?.value || '';
         const building = value('building');
@@ -3033,7 +4588,9 @@ class ScheduleManager {
         sel.innerHTML = '<option value="">-- Select Room --</option>' + sortedAvailable.map(r => `<option value="${r}">${r}</option>`).join('');
         if (sortedAvailable.includes(previousValue)) sel.value = previousValue;
         const hint = slot.querySelector('.room-hint') || document.getElementById('roomHint');
-        hint.textContent = available.length === 0 ? 'No rooms are available for this time.' : `${available.length} room${available.length === 1 ? '' : 's'} available for this time.`;
+        if (hint) {
+            hint.textContent = available.length === 0 ? 'No rooms are available for this time.' : `${available.length} room${available.length === 1 ? '' : 's'} available for this time.`;
+        }
     }
 
     showIntroIfNeeded() {
@@ -3067,11 +4624,15 @@ class ScheduleManager {
     // Enable or disable the schedule form submit depending on whether prerequisite lists exist
     checkPrereqs() {
         const btn = document.querySelector('#scheduleForm .btn-add');
-        const selected = ['termSelect', 'teacherSelect', 'courseSelect', 'sectionInput', 'subjectSelect'].every(id => document.getElementById(id)?.value.trim());
+        const selected =
+            !!this.term &&
+            Boolean(document.getElementById('teacherSelect')?.value) &&
+            this.selectedClassSections.length > 0 &&
+            Boolean(document.getElementById('subjectSelect')?.value.trim());
         const ok = this.teachers.length > 0 && this.rooms.length > 0 && selected;
         if (btn) {
             btn.disabled = !ok;
-            btn.title = ok ? '' : 'Select a term, teacher, course, subject, day, time, and room before plotting a schedule.';
+            btn.title = ok ? '' : 'Select a teacher, course, subject, day, time, and room before plotting a schedule.';
         }
     }
 
@@ -3175,43 +4736,44 @@ class ScheduleManager {
         const appShell = document.getElementById('appShell');
         const identity = document.getElementById('userIdentity');
         const signOutBtn = document.getElementById('signOutBtn');
+        const previousUserId = this.currentUser?.id || null;
         this.syncRequestId++;
         this.currentUser = session ? session.user : null;
 
+        // Never carry an administrator's selected user (or any period request)
+        // into a different authenticated account.
+        if (previousUserId && previousUserId !== this.currentUser?.id) {
+            this.ownerRequestId++;
+            this.ownerViewingUserId = null;
+            this.ownerSelectedUserId = null;
+            this.activeSchedulePeriod = null;
+            this.periodRequestId++;
+            sessionStorage.removeItem('scheduleStudioOwnerUser');
+        }
+
         if (!session || this.recoveryMode) {
-            if (!session) {
-                // Remove the previous account from memory immediately. Keep its
-                // account-scoped localStorage intact for offline recovery, but
-                // never leave it active while signed out or switching users.
-                this.ownerViewingUserId = null;
-                this.ownerSelectedUserId = null;
-                this.ownerAllSchedules = [];
-                this.ownerProfiles = [];
-                this.ownerCatalog = {};
-                this.isOwner = false;
-                this.schedules = [];
-                this.teachers = [];
-                this.subjects = [];
-                this.courses = [];
-                this.rooms = [];
-                this.buildings = [];
-                this.subjectDetails = {};
-                this.roomDetails = {};
-                document.getElementById('appShell')?.classList.remove('owner-mode', 'owner-user-mode');
-                document.getElementById('ownerBackToUsers')?.classList.add('hidden');
-            }
             if (authScreen) authScreen.classList.remove('hidden');
             if (appShell) appShell.classList.add('hidden');
+            this.showWorkspaceScreen(false);
             if (identity) identity.classList.add('hidden');
             if (signOutBtn) signOutBtn.classList.add('hidden');
             return;
         }
         if (authScreen) authScreen.classList.add('hidden');
-        if (appShell) appShell.classList.remove('hidden');
+        if (appShell) appShell.classList.add('hidden');
+        this.showWorkspaceScreen(false);
         this.loadUserLocalData();
-        // When Supabase is available, do not render cached local records first.
-        // The authoritative owner/member view should come from the database.
+
         if (this.remoteEnabled) {
+            this.schedulePeriods = [];
+            this.activeSchedulePeriod = null;
+            const periodHeader =
+                document.getElementById('activeSchedulePeriodHeader');
+
+            if (periodHeader) {
+                periodHeader.textContent = '';
+                periodHeader.classList.add('hidden');
+            }
             this.schedules = [];
             this.teachers = [];
             this.rooms = [];
@@ -3224,7 +4786,16 @@ class ScheduleManager {
         }
         this.render();
         if (identity) {
-            identity.textContent = session.user.email || 'Signed in';
+            const fullName =
+                this.currentProfile?.full_name ||
+                session.user.user_metadata?.full_name ||
+                session.user.email ||
+                'Signed in';
+
+            const firstName =
+                String(fullName).trim().split(/\s+/)[0] || 'Signed in';
+
+            identity.textContent = firstName;
             identity.classList.remove('hidden');
         }
         if (signOutBtn) signOutBtn.classList.remove('hidden');
@@ -3323,15 +4894,21 @@ class ScheduleManager {
 
     async signOut() {
         this.syncRequestId++;
+        const ownerId = this.currentUser?.id || null;
         const { error } = await this.supabase.auth.signOut();
         if (error) this.showNotification(error.message, 'error');
+        if (ownerId) {
+            sessionStorage.removeItem(
+                this.getActivePeriodSessionKey(ownerId)
+            );
+        }
+
         this.clearAuthFields();
         this.authMode = 'signin';
         this.recoveryMode = false;
         sessionStorage.removeItem('scheduleStudioOwnerUser');
     }
 
-    // --- Supabase / remote helpers (optional) ---
     initSupabase() {
         try {
             const cfg = window.SUPABASE_CONFIG || null;
@@ -3354,6 +4931,578 @@ class ScheduleManager {
             if (statusEl) statusEl.textContent = 'Remote: init error';
             console.warn('Supabase init failed', e);
         }
+    }
+
+    async loadSchedulePeriods(ownerId = this.currentUser?.id) {
+        if (!this.remoteEnabled || !this.supabase || !ownerId) {
+            this.schedulePeriods = [];
+            return [];
+        }
+
+        const { data, error } = await this.supabase
+            .from('schedule_periods')
+            .select('id,owner_id,school_year,term,created_at')
+            .eq('owner_id', ownerId)
+            .order('school_year', { ascending: false })
+            .order('term', { ascending: true });
+
+        if (error) {
+            console.warn(
+                'Supabase schedule period read error:',
+                error.message || error
+            );
+            this.schedulePeriods = [];
+            return [];
+        }
+
+        const activeScopeId = this.ownerViewingUserId || (!this.isOwner ? this.currentUser?.id : null);
+        if (activeScopeId && activeScopeId !== ownerId) return [];
+        this.schedulePeriods = Array.isArray(data) ? data : [];
+
+        return this.schedulePeriods;
+    }
+
+    async refreshSchedulesForActivePeriod() {
+        if (
+            !this.remoteEnabled ||
+            !this.supabase ||
+            !this.currentUser ||
+            !this.activeSchedulePeriod
+        ) {
+            return false;
+        }
+
+        const activePeriodId = this.activeSchedulePeriod.id;
+        const requestId = ++this.periodRequestId;
+        const ownerId = this.ownerViewingUserId || this.currentUser.id;
+
+        try {
+            let scheduleQuery = this.supabase
+                .from('schedules')
+                .select(
+                    'id,owner_id,schedule_period_id,combined_class_id,term,program,year,section,teacher_name,subject,course_year,course_code,units,lec_hours,lab_hours,delivery,building,overload,day,start_time,end_time,room'
+                )
+                .eq('schedule_period_id', activePeriodId)
+                .order('created_at', { ascending: true });
+
+            // Regular users can only see their own schedules.
+            if (!this.isOwner) {
+                scheduleQuery = scheduleQuery.eq(
+                    'owner_id',
+                    this.currentUser.id
+                );
+            }
+            // Owner/admin viewing a specific user.
+            else if (this.ownerViewingUserId) {
+                scheduleQuery = scheduleQuery.eq(
+                    'owner_id',
+                    this.ownerViewingUserId
+                );
+            }
+
+            const { data, error } = await scheduleQuery;
+
+            if (error) {
+                console.warn(
+                    'Supabase schedule period refresh error:',
+                    error.message || error
+                );
+
+                this.showNotification(
+                    'Could not refresh schedules for this period.',
+                    'error'
+                );
+
+                return false;
+            }
+
+            // Do not allow a slower request from an old user/period to replace
+            // the screen after navigation has moved elsewhere.
+            if (
+                requestId !== this.periodRequestId ||
+                !this.activeSchedulePeriod ||
+                this.activeSchedulePeriod.id !== activePeriodId ||
+                (this.ownerViewingUserId || this.currentUser?.id) !== ownerId
+            ) {
+                return false;
+            }
+
+            const scheduleRows = Array.isArray(data) ? data : [];
+
+            const mappedSchedules = scheduleRows.map(row => {
+                const parsed = this.parseCourseYear(row.course_year);
+
+                return {
+                    id: row.id,
+                    ownerId: row.owner_id || this.currentUser.id,
+                    schedulePeriodId: row.schedule_period_id || null,
+                    combinedClassId: row.combined_class_id || null,
+                    term: String(row.term || '').toLowerCase(),
+                    program:
+                        typeof this.normalizeProgram === 'function'
+                            ? this.normalizeProgram(
+                                row.program ||
+                                parsed?.program ||
+                                ''
+                            )
+                            : (
+                                row.program ||
+                                parsed?.program ||
+                                ''
+                            ),
+                    year: row.year || parsed?.year || null,
+                    section: row.section || parsed?.section || '',
+                    teacherName: String(
+                        row.teacher_name || ''
+                    ).toUpperCase(),
+                    subject: String(
+                        row.subject || ''
+                    ).toUpperCase(),
+                    courseYear:
+                        typeof this.normalizeCourseYear === 'function'
+                            ? this.normalizeCourseYear(
+                                row.course_year
+                            )
+                            : String(
+                                row.course_year || ''
+                            ).trim(),
+                    courseCode: String(
+                        row.course_code || ''
+                    ).toUpperCase(),
+                    units: row.units,
+                    lecHours: row.lec_hours,
+                    labHours: row.lab_hours,
+                    delivery: String(
+                        row.delivery || ''
+                    ),
+                    building: String(
+                        row.building || ''
+                    ).toUpperCase(),
+                    overload: row.overload || '',
+                    day: row.day,
+                    startTime: row.start_time
+                        ? row.start_time.slice(0, 5)
+                        : '',
+                    endTime: row.end_time
+                        ? row.end_time.slice(0, 5)
+                        : '',
+                    room: String(
+                        row.room || ''
+                    ).toUpperCase()
+                };
+            });
+
+            // The query is already scoped to the active period and owner.
+            this.ownerAllSchedules = [...mappedSchedules];
+            this.schedules = mappedSchedules;
+
+            return true;
+        } catch (error) {
+            console.warn(
+                'Unexpected schedule period refresh error:',
+                error
+            );
+
+            this.showNotification(
+                'Could not refresh schedules for this period.',
+                'error'
+            );
+
+            return false;
+        }
+    }
+
+    restoreActiveSchedulePeriod(ownerId) {
+        if (!ownerId || !Array.isArray(this.schedulePeriods)) {
+            this.activeSchedulePeriod = null;
+            return null;
+        }
+
+        const storageKey = this.getSchedulePeriodStorageKey(ownerId);
+        const rememberedId = localStorage.getItem(storageKey);
+
+        const rememberedPeriod = this.schedulePeriods.find(
+            period => period.id === rememberedId
+        );
+
+        if (rememberedPeriod) {
+            this.activeSchedulePeriod = rememberedPeriod;
+            return rememberedPeriod;
+        }
+
+        this.activeSchedulePeriod = null;
+        return null;
+    }
+
+    restoreSessionActiveSchedulePeriod(ownerId) {
+        if (!ownerId || !Array.isArray(this.schedulePeriods)) {
+            this.activeSchedulePeriod = null;
+            return null;
+        }
+
+        const sessionKey =
+            this.getActivePeriodSessionKey(ownerId);
+
+        const activePeriodId =
+            sessionStorage.getItem(sessionKey);
+
+        const activePeriod =
+            this.schedulePeriods.find(
+                period => period.id === activePeriodId
+            );
+
+        if (activePeriod) {
+            this.activeSchedulePeriod = activePeriod;
+            const periodHeader =
+                document.getElementById('activeSchedulePeriodHeader');
+
+            if (periodHeader) {
+                periodHeader.textContent =
+                    `${activePeriod.school_year} • ${this.formatTermLabel(activePeriod.term)}`;
+
+                periodHeader.classList.remove('hidden');
+            }
+
+            this.term = activePeriod.term;
+
+            return activePeriod;
+        }
+
+        this.activeSchedulePeriod = null;
+        return null;
+    }
+
+    setActiveSchedulePeriod(period) {
+        if (!period) {
+            this.activeSchedulePeriod = null;
+            return false;
+        }
+
+        const exists = this.schedulePeriods.some(
+            item => item.id === period.id
+        );
+
+        if (!exists) {
+            return false;
+        }
+
+        this.activeSchedulePeriod = period;
+        this.term = period.term;
+        const periodHeader =
+            document.getElementById('activeSchedulePeriodHeader');
+
+        if (periodHeader) {
+            periodHeader.textContent =
+                `${period.school_year} • ${this.formatTermLabel(period.term)}`;
+
+            periodHeader.classList.remove('hidden');
+        }
+
+        const ownerId =
+            period.owner_id ||
+            this.ownerViewingUserId ||
+            this.currentUser?.id;
+
+        if (ownerId) {
+            localStorage.setItem(
+                this.getSchedulePeriodStorageKey(ownerId),
+                period.id
+            );
+
+            sessionStorage.setItem(
+                this.getActivePeriodSessionKey(ownerId),
+                period.id
+            );
+        }
+
+        return true;
+    }
+
+    formatTermLabel(term) {
+        const labels = {
+            '1st semester': '1st Semester',
+            '2nd semester': '2nd Semester',
+            'summer': 'Summer'
+        };
+
+        return labels[term] || term;
+    }
+
+    renderWorkspacePeriods() {
+        const list =
+            document.getElementById('workspacePeriodList');
+
+        if (!list) return;
+
+        if (!Array.isArray(this.schedulePeriods) ||
+            this.schedulePeriods.length === 0) {
+
+            list.innerHTML = `
+                <p class="empty-message">
+                    No scheduling periods yet.
+                </p>
+            `;
+
+            return;
+        }
+
+        list.innerHTML = this.schedulePeriods.map(period => `
+            <div class="workspace-period-card">
+                <div class="workspace-period-info">
+                    <p class="workspace-period-school-year">
+                        ${period.school_year}
+                    </p>
+
+                    <p class="workspace-period-term">
+                        ${this.formatTermLabel(period.term)}
+                    </p>
+                </div>
+
+                <button
+                    type="button"
+                    class="btn-add workspace-period-open-btn"
+                    data-period-id="${period.id}">
+                    Open
+                </button>
+            </div>
+        `).join('');
+
+        list.querySelectorAll('.workspace-period-open-btn')
+            .forEach(button => {
+                button.addEventListener('click', async () => {
+                    const periodId = button.dataset.periodId;
+
+                    const period =
+                        this.schedulePeriods.find(
+                            item => item.id === periodId
+                        );
+
+                    if (!period) return;
+
+                    this.setActiveSchedulePeriod(period);
+                    this.schoolYear = period.school_year;
+
+                    localStorage.setItem(
+                        this.storageKey('schoolYear'),
+                        period.school_year
+                    );
+
+                    this.clearScheduleForm();
+                    this.schedules = [];
+                    this.showScheduleStudio();
+                    this.render();
+
+                    if (await this.refreshSchedulesForActivePeriod()) this.render();
+                });
+            });
+    }
+
+    async handleCreateSchedulePeriod(event) {
+        event.preventDefault();
+
+        const schoolYearInput =
+            document.getElementById('schedulePeriodSchoolYear');
+
+        const termInput =
+            document.getElementById('schedulePeriodTerm');
+
+        const message =
+            document.getElementById('schedulePeriodMessage');
+
+        const schoolYear =
+            schoolYearInput?.value.trim() || '';
+
+        const term =
+            termInput?.value || '';
+
+        if (!schoolYear) {
+            if (message) {
+                message.textContent = 'Enter a school year.';
+            }
+
+            schoolYearInput?.focus();
+            return;
+        }
+
+        if (!term) {
+            if (message) {
+                message.textContent = 'Select a semester.';
+            }
+
+            termInput?.focus();
+            return;
+        }
+
+        const ownerId =
+            this.ownerViewingUserId ||
+            this.currentUser?.id;
+
+        if (!ownerId) {
+            if (message) {
+                message.textContent =
+                    'No signed-in user was found.';
+            }
+
+            return;
+        }
+
+        if (!this.remoteEnabled || !this.supabase) {
+            if (message) {
+                message.textContent =
+                    'Scheduling periods require a Supabase connection.';
+            }
+
+            return;
+        }
+
+        const existingPeriod =
+            this.schedulePeriods.find(period =>
+                period.owner_id === ownerId &&
+                period.school_year === schoolYear &&
+                period.term === term
+            );
+
+        if (existingPeriod) {
+            if (message) {
+                message.textContent =
+                    'This scheduling period already exists.';
+            }
+
+            return;
+        }
+
+        const { data, error } =
+            await this.supabase
+                .from('schedule_periods')
+                .insert({
+                    owner_id: ownerId,
+                    school_year: schoolYear,
+                    term
+                })
+                .select(
+                    'id,owner_id,school_year,term,created_at'
+                )
+                .single();
+
+        if (error) {
+            console.error(
+                'Schedule period creation error:',
+                error.message || error
+            );
+
+            if (message) {
+                message.textContent =
+                    error.message ||
+                    'Unable to create scheduling period.';
+            }
+
+            return;
+        }
+
+        if (!data) {
+            if (message) {
+                message.textContent =
+                    'The scheduling period was not returned after creation.';
+            }
+
+            return;
+        }
+
+        this.schedulePeriods.push(data);
+        this.renderWorkspacePeriods();
+        this.setActiveSchedulePeriod(data);
+        this.clearScheduleForm();
+
+        this.schoolYear = data.school_year;
+
+        localStorage.setItem(
+            this.storageKey('schoolYear'),
+            data.school_year
+        );
+
+        const schedulePeriodModal =
+            document.getElementById('schedulePeriodModal');
+
+        if (schedulePeriodModal) {
+            schedulePeriodModal.classList.add('hidden');
+            schedulePeriodModal.setAttribute(
+                'aria-hidden',
+                'true'
+            );
+        }
+
+        this.showScheduleStudio();
+
+        this.render();
+
+        this.showNotification(
+            `${data.school_year} • ${this.formatTermLabel(data.term)} is now active.`,
+            'success'
+        );
+    }
+
+
+    showWorkspaceScreen(show = true) {
+        const authScreen = document.getElementById('authScreen');
+        const workspaceScreen = document.getElementById('workspaceScreen');
+        const appShell = document.getElementById('appShell');
+
+        if (!workspaceScreen || !appShell) return;
+
+        this.workspaceScreenVisible = show;
+
+        if (show) {
+            if (authScreen) authScreen.classList.add('hidden');
+            workspaceScreen.classList.remove('hidden');
+            appShell.classList.add('hidden');
+        } else {
+            workspaceScreen.classList.add('hidden');
+        }
+    }
+
+    changeSchedulePeriod() {
+        const ownerId =
+            this.ownerViewingUserId ||
+            this.currentUser?.id;
+
+        if (ownerId) {
+            sessionStorage.removeItem(
+                this.getActivePeriodSessionKey(ownerId)
+            );
+        }
+
+        this.activeSchedulePeriod = null;
+        this.term = '';
+        this.periodRequestId++;
+        this.clearScheduleForm();
+
+        this.showWorkspaceScreen(true);
+        this.renderWorkspacePeriods();
+    }
+
+    showScheduleStudio() {
+        const authScreen =
+            document.getElementById('authScreen');
+
+        const workspaceScreen =
+            document.getElementById('workspaceScreen');
+
+        const appShell =
+            document.getElementById('appShell');
+
+        if (!appShell) return;
+
+        this.workspaceScreenVisible = false;
+
+        if (authScreen) {
+            authScreen.classList.add('hidden');
+        }
+
+        if (workspaceScreen) {
+            workspaceScreen.classList.add('hidden');
+        }
+
+        appShell.classList.remove('hidden');
     }
 
     async syncFromRemote() {
@@ -3398,43 +5547,45 @@ class ScheduleManager {
 
         this.ownerCatalog = {};
 
+        const activePeriodOwnerId =
+            this.ownerViewingUserId || (this.isOwner ? null : syncUserId);
+
+        if (activePeriodOwnerId) {
+            await this.loadSchedulePeriods(activePeriodOwnerId);
+
+            this.restoreSessionActiveSchedulePeriod(activePeriodOwnerId);
+            console.log(
+            'RESTORED ACTIVE PERIOD:',
+            this.activeSchedulePeriod
+        );
+        } else {
+            this.schedulePeriods = [];
+            this.activeSchedulePeriod = null;
+        }
+
         const ownerScope = this.isOwner ? null : syncUserId;
 
+        // Older deployments may not yet have optional subject metadata. The
+        // helper retries with a backward-compatible column list instead of
+        // making the entire workspace fail to load.
         const catalogQueries = [
-            this.supabase
-                .from('teachers')
-                .select('id,owner_id,name')
-                .match(ownerScope ? { owner_id: ownerScope } : {})
-                .order('name', { ascending: true }),
-
-            this.supabase
-                .from('subjects')
-                .select('id,owner_id,name,course_code,units,lec_hours,lab_hours,delivery')
-                .match(ownerScope ? { owner_id: ownerScope } : {})
-                .order('name', { ascending: true }),
-
-            this.supabase
-                .from('rooms')
-                .select('id,owner_id,name,building')
-                .match(ownerScope ? { owner_id: ownerScope } : {})
-                .order('name', { ascending: true }),
-
-            this.supabase
-                .from('courses')
-                .select('id,owner_id,name')
-                .match(ownerScope ? { owner_id: ownerScope } : {})
-                .order('name', { ascending: true })
+            this.selectCatalogRows('teachers', ownerScope),
+            this.selectCatalogRows('subjects', ownerScope),
+            this.selectCatalogRows('rooms', ownerScope),
+            this.selectCatalogRows('courses', ownerScope)
         ];
 
         let scheduleQuery = this.supabase
             .from('schedules')
             .select(
-                'id,owner_id,term,program,year,section,teacher_name,subject,course_year,course_code,units,lec_hours,lab_hours,delivery,building,overload,day,start_time,end_time,room'
+                'id,owner_id,schedule_period_id,combined_class_id,term,program,year,section,teacher_name,subject,course_year,course_code,units,lec_hours,lab_hours,delivery,building,overload,day,start_time,end_time,room'
             )
             .order('created_at', { ascending: true });
 
         if (!this.isOwner) {
             scheduleQuery = scheduleQuery.eq('owner_id', syncUserId);
+        } else if (this.ownerViewingUserId) {
+            scheduleQuery = scheduleQuery.eq('owner_id', this.ownerViewingUserId);
         }
 
         const [teachersResult, subjectsResult, roomsResult, coursesResult, schedulesResult] =
@@ -3582,6 +5733,8 @@ class ScheduleManager {
             return {
                 id: row.id,
                 ownerId: row.owner_id || syncUserId,
+                schedulePeriodId: row.schedule_period_id || null,
+                combinedClassId: row.combined_class_id || null,
                 term: String(row.term || '').toLowerCase(),
                 program: typeof this.normalizeProgram === 'function'
                     ? this.normalizeProgram(row.program || parsed?.program || '')
@@ -3613,6 +5766,14 @@ class ScheduleManager {
         if (this.isOwner && this.ownerViewingUserId) {
             this.schedules = this.ownerAllSchedules.filter(
                 schedule => schedule.ownerId === this.ownerViewingUserId
+            );
+        }
+
+        if (this.activeSchedulePeriod && (!this.isOwner || this.ownerViewingUserId)) {
+            this.schedules = this.schedules.filter(
+                schedule =>
+                    schedule.schedulePeriodId ===
+                    this.activeSchedulePeriod.id
             );
         }
 
@@ -3705,10 +5866,21 @@ class ScheduleManager {
         this.renderBuildingOptions();
         this.renderRoomBuildingOptions();
         this.renderCourseOptions();
+        this.renderClassSectionOptions();
         this.renderSectionScheduleOptions();
         this.checkPrereqs();
         this.render();
+        if (!this.isOwner) {
+            this.renderWorkspacePeriods();
 
+            if (this.activeSchedulePeriod) {
+                this.showScheduleStudio();
+            } else {
+                this.showWorkspaceScreen(true);
+            }
+        } else {
+            this.showScheduleStudio();
+        }
         this.showNotification('Remote sync complete.', 'success');
 
         } catch (err) {
