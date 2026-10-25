@@ -5186,6 +5186,12 @@ class ScheduleManager {
             return false;
         }
 
+        if (this.activeSchedulePeriod?.id !== period.id) {
+            this.periodRequestId++;
+            this.schedules = [];
+            this.ownerAllSchedules = [];
+        }
+
         this.activeSchedulePeriod = period;
         this.term = period.term;
         const periodHeader =
@@ -5288,7 +5294,6 @@ class ScheduleManager {
                     );
 
                     this.clearScheduleForm();
-                    this.schedules = [];
                     this.showScheduleStudio();
                     this.render();
 
@@ -5434,6 +5439,7 @@ class ScheduleManager {
         this.showScheduleStudio();
 
         this.render();
+        if (await this.refreshSchedulesForActivePeriod()) this.render();
 
         this.showNotification(
             `${data.school_year} • ${this.formatTermLabel(data.term)} is now active.`,
@@ -5474,6 +5480,8 @@ class ScheduleManager {
         this.activeSchedulePeriod = null;
         this.term = '';
         this.periodRequestId++;
+        this.schedules = [];
+        this.ownerAllSchedules = [];
         this.clearScheduleForm();
 
         this.showWorkspaceScreen(true);
@@ -5509,6 +5517,7 @@ class ScheduleManager {
         if (!this.remoteEnabled || !this.supabase || !this.currentUser) return;
 
         const syncId = this.syncRequestId;
+        const syncPeriodRequestId = this.periodRequestId;
         const syncUserId = this.currentUser.id;
         const syncOwnerViewingUserId = this.ownerViewingUserId || null;
 
@@ -5553,6 +5562,11 @@ class ScheduleManager {
         if (activePeriodOwnerId) {
             await this.loadSchedulePeriods(activePeriodOwnerId);
 
+            if (syncPeriodRequestId !== this.periodRequestId) {
+                console.debug('Ignoring sync because schedule period changed.');
+                return;
+            }
+
             this.restoreSessionActiveSchedulePeriod(activePeriodOwnerId);
             console.log(
             'RESTORED ACTIVE PERIOD:',
@@ -5563,6 +5577,7 @@ class ScheduleManager {
             this.activeSchedulePeriod = null;
         }
 
+        const syncActivePeriodId = this.activeSchedulePeriod?.id || null;
         const ownerScope = this.isOwner ? null : syncUserId;
 
         // Older deployments may not yet have optional subject metadata. The
@@ -5588,10 +5603,25 @@ class ScheduleManager {
             scheduleQuery = scheduleQuery.eq('owner_id', this.ownerViewingUserId);
         }
 
+        const isPeriodScopedScheduleView =
+            !this.isOwner || !!this.ownerViewingUserId;
+
+        if (isPeriodScopedScheduleView && syncActivePeriodId) {
+            scheduleQuery = scheduleQuery.eq(
+                'schedule_period_id',
+                syncActivePeriodId
+            );
+        }
+
+        const scheduleRequest =
+            !this.isOwner && !syncActivePeriodId
+                ? Promise.resolve({ data: [], error: null })
+                : scheduleQuery;
+
         const [teachersResult, subjectsResult, roomsResult, coursesResult, schedulesResult] =
             await Promise.all([
                 ...catalogQueries,
-                scheduleQuery
+                scheduleRequest
             ]);
 
         if (
@@ -5605,6 +5635,14 @@ class ScheduleManager {
 
         if ((this.ownerViewingUserId || null) !== syncOwnerViewingUserId) {
             console.debug('Ignoring sync because owner view changed.');
+            return;
+        }
+
+        if (
+            syncPeriodRequestId !== this.periodRequestId ||
+            (this.activeSchedulePeriod?.id || null) !== syncActivePeriodId
+        ) {
+            console.debug('Ignoring sync because schedule period changed.');
             return;
         }
 

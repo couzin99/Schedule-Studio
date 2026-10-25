@@ -43,6 +43,24 @@ const row = (overrides = {}) => ({
     ...overrides
 });
 
+const periodTwo = { id: 'period-2', owner_id: 'owner-1', school_year: '2027–2028', term: '1st semester' };
+manager.schedulePeriods = [periodTwo];
+manager.activeSchedulePeriod = { id: 'period-1', term: '2nd semester' };
+manager.getSchedulePeriodStorageKey = () => 'active-period';
+manager.getActivePeriodSessionKey = () => 'session-period';
+global.localStorage = { setItem() {} };
+global.sessionStorage = { setItem() {} };
+global.document.getElementById = () => null;
+manager.schedules = [row({ schedulePeriodId: 'period-1' })];
+manager.ownerAllSchedules = [...manager.schedules];
+manager.periodRequestId = 10;
+if (!manager.setActiveSchedulePeriod(periodTwo)) throw new Error('Could not activate a valid schedule period.');
+if (manager.schedules.length || manager.ownerAllSchedules.length) throw new Error('Changing schedule periods retained stale schedule rows.');
+if (manager.periodRequestId !== 11) throw new Error('Changing schedule periods did not invalidate an older period request.');
+manager.activeSchedulePeriod = { id: 'period-1', term: '1st semester' };
+manager.term = '1st semester';
+manager.periodRequestId = 0;
+
 const combinedId = 'combined-1';
 manager.schedules = [
     row({ combinedClassId: combinedId, courseYear: 'BSEE - 1A' }),
