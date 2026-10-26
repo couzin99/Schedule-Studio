@@ -4194,3 +4194,500 @@ body {
         transition-duration: 1ms;
     }
 }
+
+#appShell #allSchedules {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(min(100%, 310px), 1fr));
+    align-items: stretch;
+    gap: 14px;
+}
+
+#appShell #allSchedules > .teacher-directory-card {
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+    min-height: 0;
+    padding: 15px 16px 14px;
+    border: 1px solid #eee2d9;
+    border-left: 3px solid #d9815b;
+    border-radius: 13px;
+    background: #fff;
+    box-shadow: 0 3px 12px rgba(51,43,37,.035);
+}
+
+#appShell .teacher-directory-header {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 12px;
+}
+
+#appShell .teacher-directory-identity {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 8px;
+    min-width: 0;
+}
+
+#appShell .teacher-directory-card .teacher-name {
+    margin: 0;
+    color: #35312f !important;
+    font-size: 1.06rem;
+    font-weight: 750;
+    line-height: 1.35;
+    overflow-wrap: anywhere;
+}
+
+#appShell .teacher-class-count {
+    flex: 0 0 auto;
+    padding: 5px 8px;
+    border: 1px solid #f0dfd2;
+    border-radius: 999px;
+    background: #fff7f1;
+    color: #9e5b40;
+    font-size: .68rem;
+    font-weight: 750;
+    white-space: nowrap;
+}
+
+#appShell .teacher-directory-summary {
+    margin: 6px 0 12px;
+    color: #7b706a;
+    font-size: .78rem;
+    font-weight: 600;
+}
+
+#appShell .teacher-directory-footer {
+    display: grid;
+    justify-items: end;
+    gap: 12px;
+    margin-top: auto;
+}
+
+#appShell .teacher-weekdays {
+    display: flex;
+    align-items: flex-end;
+    gap: 7px;
+    min-width: 0;
+    justify-self: start;
+}
+
+#appShell .teacher-weekday {
+    display: grid;
+    justify-items: center;
+    gap: 4px;
+    min-width: 27px;
+    color: #a0958e;
+}
+
+#appShell .teacher-weekday-label {
+    font-size: .59rem;
+    font-weight: 750;
+    letter-spacing: .045em;
+    line-height: 1;
+}
+
+#appShell .teacher-weekday-dot {
+    width: 7px;
+    height: 7px;
+    border: 1px solid #d9815b;
+    border-radius: 50%;
+    background: #d9815b;
+}
+
+#appShell .teacher-weekday.is-active {
+    color: #795642;
+}
+
+#appShell .teacher-directory-action {
+    flex: 0 0 auto;
+    min-height: 36px;
+    margin: 0;
+    padding: 6px 10px;
+    border: 1px solid #d9815b;
+    border-radius: 9px;
+    background: #d9815b;
+    box-shadow: none;
+    color: #fff;
+    font-size: .75rem;
+    font-weight: 750;
+    white-space: nowrap;
+}
+
+#appShell .teacher-directory-action:hover {
+    border-color: #c96f4c;
+    background: #c96f4c;
+    color: #fff;
+}
+
+#appShell .teacher-directory-action span {
+    margin-left: 4px;
+}
+
+#appShell #allSchedules > .pagination {
+    grid-column: 1 / -1;
+}
+
+@media (max-width: 600px) {
+    #appShell #allSchedules {
+        grid-template-columns: minmax(0, 1fr);
+    }
+
+    #appShell .teacher-directory-footer {
+        justify-items: stretch;
+    }
+
+    #appShell .teacher-weekdays {
+        justify-self: start;
+    }
+
+    #appShell .teacher-directory-action {
+        align-self: flex-start;
+        justify-self: end;
+    }
+}
+
+#appShell #studentSectionList {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(min(100%, 310px), 1fr));
+    align-items: stretch;
+    gap: 14px;
+}
+
+#appShell #studentSectionList > .student-section-overview {
+    display: flex;
+    flex-direction: column;
+    align-items: stretch;
+    min-width: 0;
+    min-height: 0;
+    padding: 15px 16px 14px;
+    border: 1px solid #eee2d9;
+    border-left: 3px solid #d9815b;
+    border-radius: 13px;
+    background: #fff;
+    box-shadow: 0 3px 12px rgba(51,43,37,.035);
+}
+
+#appShell .student-overview-header {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 12px;
+}
+
+#appShell .student-overview-header .teacher-name {
+    min-width: 0;
+    margin: 0;
+    color: #35312f !important;
+    font-size: 1.06rem;
+    font-weight: 750;
+    line-height: 1.35;
+    overflow-wrap: anywhere;
+}
+
+#appShell .student-section-overview .teacher-class-count {
+    flex: 0 0 auto;
+}
+
+#appShell .student-overview-summary {
+    margin: 6px 0 12px;
+    color: #7b706a;
+    font-size: .78rem;
+    font-weight: 600;
+}
+
+#appShell .student-overview-footer {
+    display: grid;
+    justify-items: end;
+    gap: 12px;
+    margin-top: auto;
+}
+
+#appShell .student-overview-footer .teacher-weekdays {
+    justify-self: start;
+}
+
+#appShell .student-overview-action {
+    justify-self: end;
+}
+
+#appShell #studentSectionList > .pagination {
+    grid-column: 1 / -1;
+}
+
+@media (max-width: 600px) {
+    #appShell #studentSectionList {
+        grid-template-columns: minmax(0, 1fr);
+    }
+}
+
+#appShell #roomAssignmentList {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(min(100%, 310px), 1fr));
+    align-items: stretch;
+    gap: 14px;
+}
+
+#appShell #roomAssignmentList > .room-assignment-overview {
+    display: flex;
+    flex-direction: column;
+    align-items: stretch;
+    min-width: 0;
+    min-height: 0;
+    padding: 15px 16px 14px;
+    border: 1px solid #eee2d9;
+    border-left: 3px solid #d9815b;
+    border-radius: 13px;
+    background: #fff;
+    box-shadow: 0 3px 12px rgba(51,43,37,.035);
+}
+
+#appShell .room-overview-header {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 12px;
+    padding-bottom: 11px;
+    border-bottom: 1px solid #f0e7e1;
+}
+
+#appShell .room-overview-header .teacher-name {
+    min-width: 0;
+    margin: 0;
+    color: #35312f !important;
+    font-size: 1.06rem;
+    font-weight: 750;
+    line-height: 1.35;
+    overflow-wrap: anywhere;
+}
+
+#appShell .room-overview-details {
+    display: grid;
+    gap: 12px;
+    margin: 10px 0 12px;
+}
+
+#appShell .room-overview-summary {
+    margin: 0;
+    color: #7b706a;
+    font-size: .78rem;
+    font-weight: 600;
+}
+
+#appShell .room-overview-details .teacher-weekdays {
+    justify-self: start;
+}
+
+#appShell .room-overview-footer {
+    display: flex;
+    justify-content: flex-end;
+    margin-top: auto;
+}
+
+#appShell .room-overview-footer .teacher-directory-action {
+    flex: 0 0 auto;
+}
+
+#appShell #roomAssignmentList > .pagination {
+    grid-column: 1 / -1;
+}
+
+@media (max-width: 600px) {
+    #appShell #roomAssignmentList {
+        grid-template-columns: minmax(0, 1fr);
+    }
+}
+
+#schedulePeriodModal {
+    padding: 20px;
+    background: rgba(38, 31, 28, .42);
+}
+
+#schedulePeriodModal .schedule-period-modal-content {
+    width: min(520px, calc(100vw - 32px));
+    max-width: 520px;
+    min-height: 0;
+    max-height: calc(100vh - 40px);
+    max-height: calc(100dvh - 40px);
+    overflow-y: auto;
+    padding: 32px 34px 26px;
+    border: 1px solid #f0e3d9;
+    border-radius: 20px;
+    background: #fffdfb;
+    box-shadow: 0 16px 42px rgba(51, 43, 37, .16);
+}
+
+#schedulePeriodModal .close-modal {
+    top: 16px;
+    right: 18px;
+    display: grid;
+    place-items: center;
+    width: 40px;
+    height: 40px;
+    border-radius: 9px;
+    color: #887970;
+    font-size: 21px;
+    line-height: 1;
+    transition: background .18s ease, color .18s ease;
+}
+
+#schedulePeriodModal .close-modal:hover,
+#schedulePeriodModal .close-modal:focus-visible {
+    outline: none;
+    background: #fff2e9;
+    color: #9e5b40;
+}
+
+#schedulePeriodModal .schedule-period-modal-body {
+    width: min(100%, 560px);
+    margin: 0 auto;
+}
+
+#schedulePeriodModal .eyebrow {
+    margin: 0 44px 8px 0;
+    color: #c77958;
+    font-size: .68rem;
+    letter-spacing: .14em;
+}
+
+#schedulePeriodModal #schedulePeriodModalTitle {
+    margin: 0;
+    color: #35312f;
+    font-size: 1.55rem;
+    font-weight: 750;
+    letter-spacing: -.035em;
+    line-height: 1.25;
+}
+
+#schedulePeriodModal .schedule-period-modal-description {
+    margin: 9px 0 24px;
+    color: #7b706a;
+    font-size: .88rem;
+    line-height: 1.5;
+}
+
+#schedulePeriodModal #schedulePeriodForm {
+    width: 100%;
+}
+
+#schedulePeriodModal .form-group {
+    margin-bottom: 16px;
+}
+
+#schedulePeriodModal #schedulePeriodForm .form-group {
+    width: 100%;
+    margin: 0 0 16px;
+}
+
+#schedulePeriodModal .form-group label {
+    margin-bottom: 7px;
+    color: #514943;
+    font-size: .82rem;
+    font-weight: 700;
+}
+
+#schedulePeriodModal .form-group input,
+#schedulePeriodModal .form-group select {
+    min-height: 48px;
+    padding: 11px 13px;
+    border: 1px solid #e7d9cf;
+    border-radius: 10px;
+    background: #fff;
+    color: #35312f;
+    font-family: inherit;
+    font-size: .9rem;
+    transition: border-color .18s ease, box-shadow .18s ease;
+}
+
+#schedulePeriodModal .form-group input:focus,
+#schedulePeriodModal .form-group select:focus {
+    outline: none;
+    border-color: #d9815b;
+    box-shadow: 0 0 0 3px rgba(217, 129, 91, .14);
+}
+
+#schedulePeriodModal .schedule-form-actions {
+    width: 100%;
+    justify-content: flex-end;
+    gap: 10px;
+    margin-top: 22px;
+    padding-top: 18px;
+    border-top: 1px solid #f0e3d9;
+}
+
+#schedulePeriodModal .schedule-form-actions .btn-clear,
+#schedulePeriodModal .schedule-form-actions .btn-add {
+    min-height: 42px;
+    margin: 0;
+    padding: 10px 17px;
+    border-radius: 10px;
+    font-family: inherit;
+    font-size: .84rem;
+    font-weight: 750;
+    line-height: 1.2;
+    cursor: pointer;
+    transition: background .18s ease, border-color .18s ease, box-shadow .18s ease, color .18s ease;
+}
+
+#schedulePeriodModal .schedule-form-actions .btn-clear {
+    flex: 0 0 auto;
+    width: auto;
+    border: 1px solid #e7d9cf;
+    background: #fff;
+    color: #71665f;
+}
+
+#schedulePeriodModal .schedule-form-actions .btn-clear:hover {
+    border-color: #d8b6a1;
+    background: #fff7f1;
+    color: #795642;
+}
+
+#schedulePeriodModal .schedule-form-actions .btn-add {
+    flex: 0 0 auto;
+    width: auto;
+    min-width: 0;
+    border: 1px solid #d9815b;
+    background: #d9815b;
+    box-shadow: 0 4px 10px rgba(201, 111, 76, .14);
+    color: #fff;
+}
+
+#schedulePeriodModal .schedule-form-actions .btn-add::after {
+    content: " \2192";
+}
+
+#schedulePeriodModal .schedule-form-actions .btn-add:hover {
+    border-color: #c96f4c;
+    background: #c96f4c;
+    box-shadow: 0 6px 14px rgba(201, 111, 76, .2);
+}
+
+#schedulePeriodModal .schedule-form-actions .btn-add:active {
+    transform: translateY(1px);
+}
+
+@media (max-width: 520px) {
+    #schedulePeriodModal {
+        padding: 14px;
+    }
+
+    #schedulePeriodModal .schedule-period-modal-content {
+        max-height: calc(100vh - 28px);
+        max-height: calc(100dvh - 28px);
+        padding: 26px 22px 22px;
+    }
+}
+
+@media (max-width: 360px) {
+    #schedulePeriodModal .schedule-form-actions {
+        align-items: stretch;
+        flex-direction: column-reverse;
+    }
+
+    #schedulePeriodModal .schedule-form-actions .btn-clear,
+    #schedulePeriodModal .schedule-form-actions .btn-add {
+        width: 100%;
+    }
+}

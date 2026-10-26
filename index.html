@@ -442,61 +442,63 @@
                 ×
             </button>
 
-            <p class="eyebrow">NEW WORKSPACE</p>
-            <h2 id="schedulePeriodModalTitle">Create Scheduling Period</h2>
+            <div class="schedule-period-modal-body">
+                <p class="eyebrow">NEW WORKSPACE</p>
+                <h2 id="schedulePeriodModalTitle">Create Scheduling Period</h2>
 
-            <p class="schedule-period-modal-description">
-                Choose the school year and semester for the schedule you are about to build.
-            </p>
-
-            <form id="schedulePeriodForm">
-
-                <div class="form-group">
-                    <label for="schedulePeriodSchoolYear">
-                        School Year
-                    </label>
-                    <input
-                        id="schedulePeriodSchoolYear"
-                        type="text"
-                        placeholder="e.g., 2026 – 2027"
-                        maxlength="20"
-                        required>
-                </div>
-
-                <div class="form-group">
-                    <label for="schedulePeriodTerm">
-                        Semester
-                    </label>
-                    <select id="schedulePeriodTerm" required>
-                        <option value="">-- Select Semester --</option>
-                        <option value="1st semester">1st Semester</option>
-                        <option value="2nd semester">2nd Semester</option>
-                        <option value="summer">Summer</option>
-                    </select>
-                </div>
-
-                <p
-                    id="schedulePeriodMessage"
-                    class="edit-form-message"
-                    role="alert">
+                <p class="schedule-period-modal-description">
+                    Start a new workspace for your academic schedule.
                 </p>
 
-                <div class="schedule-form-actions">
-                    <button
-                        id="schedulePeriodCancel"
-                        type="button"
-                        class="btn-clear">
-                        Cancel
-                    </button>
+                <form id="schedulePeriodForm">
 
-                    <button
-                        type="submit"
-                        class="btn-add">
-                        Create & Continue
-                    </button>
-                </div>
+                    <div class="form-group">
+                        <label for="schedulePeriodSchoolYear">
+                            School Year
+                        </label>
+                        <input
+                            id="schedulePeriodSchoolYear"
+                            type="text"
+                            placeholder="e.g., 2026 – 2027"
+                            maxlength="20"
+                            required>
+                    </div>
 
-            </form>
+                    <div class="form-group">
+                        <label for="schedulePeriodTerm">
+                            Semester
+                        </label>
+                        <select id="schedulePeriodTerm" required>
+                            <option value="">-- Select Semester --</option>
+                            <option value="1st semester">1st Semester</option>
+                            <option value="2nd semester">2nd Semester</option>
+                            <option value="summer">Summer</option>
+                        </select>
+                    </div>
+
+                    <p
+                        id="schedulePeriodMessage"
+                        class="edit-form-message"
+                        role="alert">
+                    </p>
+
+                    <div class="schedule-form-actions">
+                        <button
+                            id="schedulePeriodCancel"
+                            type="button"
+                            class="btn-clear">
+                            Cancel
+                        </button>
+
+                        <button
+                            type="submit"
+                            class="btn-add">
+                            Create & Continue
+                        </button>
+                    </div>
+
+                </form>
+            </div>
         </div>
     </div>
 

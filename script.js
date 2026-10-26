@@ -1683,56 +1683,101 @@ class ScheduleManager {
 
     renderAllView() {
         const allSchedules = document.getElementById('allSchedules');
-        if (this.schedules.length === 0) {
-            allSchedules.innerHTML = '<p class="empty-message">No schedules yet. Add one to get started!</p>';
-            return;
-        }
+        if (!allSchedules) return;
 
-        const grouped = {};
+        const grouped = new Map();
+        this.teachers.forEach(teacherName => {
+            const name = String(teacherName || '').trim();
+            if (!name) return;
+            const key = name.toLowerCase();
+            if (!grouped.has(key)) {
+                grouped.set(key, { teacherName: name, schedules: [] });
+            }
+        });
+
         this.schedules.forEach(s => {
-            const key = `${s.teacherName}|||${s.term || ''}`;
-            if (!grouped[key]) grouped[key] = { teacherName: s.teacherName, term: s.term || '', schedules: [] };
-            grouped[key].schedules.push(s);
+            const name = String(s.teacherName || '').trim();
+            if (!name) return;
+            const key = name.toLowerCase();
+            if (!grouped.has(key)) {
+                grouped.set(key, { teacherName: name, schedules: [] });
+            }
+            grouped.get(key).schedules.push(s);
         });
 
         const dayOrder = { 'Monday': 1, 'Tuesday': 2, 'Wednesday': 3, 'Thursday': 4, 'Friday': 5, 'Saturday': 6 };
-        Object.values(grouped).forEach(group => {
+        grouped.forEach(group => {
             group.schedules.sort((a, b) => {
                 const dayCompare = (dayOrder[a.day] || 0) - (dayOrder[b.day] || 0);
                 if (dayCompare !== 0) return dayCompare;
-                const courseCompare = a.courseYear.localeCompare(b.courseYear);
+                const courseCompare = String(a.courseYear || '').localeCompare(String(b.courseYear || ''));
                 if (courseCompare !== 0) return courseCompare;
-                return a.startTime.localeCompare(b.startTime);
+                return String(a.startTime || '').localeCompare(String(b.startTime || ''));
             });
         });
 
-        const groupsSorted = Object.values(grouped).sort((a, b) => a.teacherName.localeCompare(b.teacherName) || this.compareTerms(a.term, b.term));
+        const groupsSorted = [...grouped.values()].sort((a, b) => a.teacherName.localeCompare(b.teacherName));
         const filteredGroups = groupsSorted.filter(group => group.teacherName.toLowerCase().includes(this.teacherScheduleSearch));
         if (!filteredGroups.length) {
-            allSchedules.innerHTML = `<p class="empty-message">No teacher schedules match "${this.escapeHtml(this.teacherScheduleSearch)}".</p>`;
+            allSchedules.innerHTML = this.teacherScheduleSearch
+                ? `<p class="empty-message">No teachers match "${this.escapeHtml(this.teacherScheduleSearch)}".</p>`
+                : '<p class="empty-message">No teachers have been added yet.</p>';
             return;
         }
 
         const allPage = this.getPaginatedItems(filteredGroups, 'all');
 
         allSchedules.innerHTML = allPage.items.map(group => {
-            const { teacherName, term, schedules: teacherSchedules } = group;
+            const { teacherName, schedules: teacherSchedules } = group;
+            const terms = [...new Set(teacherSchedules.map(schedule => schedule.term || ''))];
+            const term = this.activeSchedulePeriod?.term ||
+                (terms.length === 1 ? terms[0] : this.term || null);
+            const summary = this.getTeacherScheduleSummary(teacherSchedules);
             const conflicts = this.getTeacherConflicts(teacherName, term);
             const hasConflict = conflicts.length > 0;
+            const safeTeacherName = teacherName
+                .replace(/\\/g, '\\\\')
+                .replace(/'/g, "\\'");
+            const safeTerm = String(term || '')
+                .replace(/\\/g, '\\\\')
+                .replace(/'/g, "\\'");
+            const termArgument = term === null ? 'null' : `'${safeTerm}'`;
+            const weekdays = [
+                ['Monday', 'MON'],
+                ['Tuesday', 'TUE'],
+                ['Wednesday', 'WED'],
+                ['Thursday', 'THU'],
+                ['Friday', 'FRI']
+            ];
             return `
-                <div class="teacher-card ${hasConflict ? 'has-conflict' : ''}">
-                    <div class="student-section-header">
-                        <div class="teacher-name">
-                            ${teacherName}
+                <article class="teacher-card teacher-directory-card ${hasConflict ? 'has-conflict' : ''}">
+                    <header class="teacher-directory-header">
+                        <div class="teacher-directory-identity">
+                            <h3 class="teacher-name">${this.escapeHtml(teacherName)}</h3>
                             ${hasConflict ? '<span class="conflict-badge">⚠️ CONFLICT</span>' : ''}
                         </div>
-
+                        <span class="teacher-class-count">${summary.classCount} scheduled ${summary.classCount === 1 ? 'class' : 'classes'}</span>
+                    </header>
+                    <p class="teacher-directory-summary">
+                        ${summary.classCount
+                            ? `${summary.subjectCount} ${summary.subjectCount === 1 ? 'subject' : 'subjects'} · ${summary.roomCount} ${summary.roomCount === 1 ? 'room' : 'rooms'}`
+                            : 'No scheduled classes'}
+                    </p>
+                    <div class="teacher-directory-footer">
+                        <div class="teacher-weekdays" aria-label="Scheduled weekdays">
+                            ${weekdays.map(([day, label]) => `
+                                <span class="teacher-weekday ${summary.teachingDays.includes(day) ? 'is-active' : ''}" ${summary.teachingDays.includes(day) ? `title="Classes on ${day}"` : ''}>
+                                    <span class="teacher-weekday-label">${label}</span>
+                                    ${summary.teachingDays.includes(day) ? '<span class="teacher-weekday-dot" aria-hidden="true"></span>' : ''}
+                                </span>
+                            `).join('')}
+                        </div>
                         <button
                             type="button"
-                            class="btn-view student-view-timetable"
-                            onclick="manager.showTeacherSchedule('${teacherName.replace(/'/g, "\\'")}', '${term.replace(/'/g, "\\'")}')"
+                            class="btn-view teacher-directory-action"
+                            onclick="manager.showTeacherSchedule('${safeTeacherName}', ${termArgument})"
                         >
-                            View Timetable
+                            View Timetable <span aria-hidden="true">→</span>
                         </button>
                     </div>
                     ${hasConflict ? `
@@ -1740,32 +1785,7 @@ class ScheduleManager {
                             ❌ This teacher has ${conflicts.length} scheduling conflict(s).
                         </div>
                     ` : ''}
-                    <table class="schedule-table full-table">
-                        <thead>
-                            <tr>
-                                <th>Subject</th>
-                                <th>Course &amp; Year</th>
-                                <th>Day</th>
-                                <th>Time</th>
-                                <th>Room</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            ${teacherSchedules.map(schedule => {
-                                const isConflicted = conflicts.some(c => c.schedule1.id === schedule.id || c.schedule2.id === schedule.id);
-                                return `
-                                    <tr class="${isConflicted ? 'conflict-row' : ''}">
-                                        <td>${schedule.subject}</td>
-                                        <td>${schedule.courseYear}</td>
-                                        <td>${schedule.day}</td>
-                                        <td>${this.formatTime(schedule.startTime)} - ${this.formatTime(schedule.endTime)}</td>
-                                        <td>${schedule.room}</td>
-                                    </tr>
-                                `;
-                            }).join('')}
-                        </tbody>
-                    </table>
-                </div>
+                </article>
             `;
         }).join('');
 
@@ -1773,6 +1793,26 @@ class ScheduleManager {
             'beforeend',
             this.renderPagination('all', allPage.totalItems)
         );  
+    }
+
+    getTeacherScheduleSummary(schedules) {
+        const logicalSchedules = this.getLogicalScheduleRows(schedules);
+        const uniqueValues = values => new Set(
+            values
+                .map(value => String(value || '').trim().toLowerCase())
+                .filter(Boolean)
+        ).size;
+        const teachingDays = new Set(
+            logicalSchedules.map(schedule => schedule.day)
+        );
+        const weekdays = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday'];
+
+        return {
+            classCount: logicalSchedules.length,
+            subjectCount: uniqueValues(logicalSchedules.map(schedule => schedule.subject)),
+            roomCount: uniqueValues(logicalSchedules.map(schedule => schedule.room)),
+            teachingDays: weekdays.filter(day => teachingDays.has(day))
+        };
     }
 
     clearScheduleForm() {
@@ -1876,36 +1916,70 @@ class ScheduleManager {
             const { section, term, schedules: rows } = group;
             const safeSection = section.replace(/\\/g, '\\\\').replace(/'/g, "\\'");
             const safeTerm = term.replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+            const summary = this.getStudentSectionSummary(rows);
+            const weekdays = [
+                ['Monday', 'MON'],
+                ['Tuesday', 'TUE'],
+                ['Wednesday', 'WED'],
+                ['Thursday', 'THU'],
+                ['Friday', 'FRI']
+            ];
             return `
-                <div class="teacher-card student-section-card">
-                    <div class="student-section-header">
-                        <div class="teacher-name">
-                            ${section}
+                <article class="teacher-card student-section-card student-section-overview">
+                    <header class="student-overview-header">
+                        <h3 class="teacher-name">${this.escapeHtml(section)}</h3>
+                        <span class="teacher-class-count">${summary.classCount} scheduled ${summary.classCount === 1 ? 'class' : 'classes'}</span>
+                    </header>
+                    <p class="student-overview-summary">
+                        ${summary.subjectCount} ${summary.subjectCount === 1 ? 'subject' : 'subjects'} ·
+                        ${summary.teacherCount} ${summary.teacherCount === 1 ? 'teacher' : 'teachers'} ·
+                        ${summary.roomCount} ${summary.roomCount === 1 ? 'room' : 'rooms'}
+                    </p>
+                    <div class="student-overview-footer">
+                        <div class="teacher-weekdays" aria-label="Scheduled weekdays">
+                            ${weekdays.map(([day, label]) => `
+                                <span class="teacher-weekday ${summary.teachingDays.includes(day) ? 'is-active' : ''}" ${summary.teachingDays.includes(day) ? `title="Classes on ${day}"` : ''}>
+                                    <span class="teacher-weekday-label">${label}</span>
+                                    ${summary.teachingDays.includes(day) ? '<span class="teacher-weekday-dot" aria-hidden="true"></span>' : ''}
+                                </span>
+                            `).join('')}
                         </div>
-
                         <button
                             type="button"
-                            class="btn-view student-view-timetable"
+                            class="btn-view teacher-directory-action student-overview-action"
                             onclick="manager.showSectionSchedule('${safeSection}', '${safeTerm}')"
                         >
-                            View timetable
+                            View Timetable <span aria-hidden="true">→</span>
                         </button>
                     </div>
-
-                    <table class="schedule-table full-table">
-                        <thead><tr><th>Subject</th><th>Teacher</th><th>Day</th><th>Time</th><th>Room</th></tr></thead>
-                        <tbody>${rows.map(schedule => `
-                            <tr><td>${schedule.subject}</td><td>${schedule.teacherName}</td><td>${schedule.day}</td>
-                            <td>${this.formatTime(schedule.startTime)} - ${this.formatTime(schedule.endTime)}</td><td>${schedule.room}</td></tr>
-                        `).join('')}</tbody>
-                    </table>
-                </div>
+                </article>
             `;
         }).join('');
         list.insertAdjacentHTML(
             'beforeend',
             this.renderPagination('students', studentPage.totalItems)
         );
+    }
+
+    getStudentSectionSummary(schedules) {
+        const logicalSchedules = this.getLogicalScheduleRows(schedules);
+        const uniqueValues = values => new Set(
+            values
+                .map(value => String(value || '').trim().toLowerCase())
+                .filter(Boolean)
+        ).size;
+        const scheduledDays = new Set(
+            logicalSchedules.map(schedule => schedule.day)
+        );
+
+        return {
+            classCount: logicalSchedules.length,
+            subjectCount: uniqueValues(logicalSchedules.map(schedule => schedule.subject)),
+            teacherCount: uniqueValues(logicalSchedules.map(schedule => schedule.teacherName)),
+            roomCount: uniqueValues(logicalSchedules.map(schedule => schedule.room)),
+            teachingDays: ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday']
+                .filter(day => scheduledDays.has(day))
+        };
     }
 
     renderRoomAssignmentsView() {
@@ -1964,29 +2038,64 @@ class ScheduleManager {
         list.innerHTML = roomPage.items.map(group => {
             const safeRoom = group.room.replace(/\\/g, '\\\\').replace(/'/g, "\\'");
             const safeTerm = group.term.replace(/\\/g, '\\\\').replace(/'/g, "\\'");
-            const logicalSchedules = this.getLogicalScheduleRows(group.schedules);
-            return `<div class="teacher-card room-assignment-card">
-                <div class="student-section-header">
-                    <div class="teacher-name">
-                        ${this.escapeHtml(group.room)}
+            const summary = this.getRoomAssignmentSummary(group.schedules);
+            const weekdays = [
+                ['Monday', 'MON'],
+                ['Tuesday', 'TUE'],
+                ['Wednesday', 'WED'],
+                ['Thursday', 'THU'],
+                ['Friday', 'FRI']
+            ];
+            return `<article class="teacher-card room-assignment-card room-assignment-overview">
+                <header class="room-overview-header">
+                    <h3 class="teacher-name">${this.escapeHtml(group.room)}</h3>
+                    <span class="teacher-class-count">${summary.classCount} scheduled ${summary.classCount === 1 ? 'class' : 'classes'}</span>
+                </header>
+                <div class="room-overview-details">
+                    <p class="room-overview-summary">${summary.subjectCount} ${summary.subjectCount === 1 ? 'subject' : 'subjects'}</p>
+                    <div class="teacher-weekdays" aria-label="Room scheduled weekdays">
+                        ${weekdays.map(([day, label]) => `
+                            <span class="teacher-weekday ${summary.teachingDays.includes(day) ? 'is-active' : ''}" ${summary.teachingDays.includes(day) ? `title="Room is scheduled on ${day}"` : ''}>
+                                <span class="teacher-weekday-label">${label}</span>
+                                ${summary.teachingDays.includes(day) ? '<span class="teacher-weekday-dot" aria-hidden="true"></span>' : ''}
+                            </span>
+                        `).join('')}
                     </div>
-
+                </div>
+                <div class="room-overview-footer">
                     <button
                         type="button"
-                        class="btn-view student-view-timetable"
+                        class="btn-view teacher-directory-action"
                         onclick="manager.showRoomSchedule('${safeRoom}', '${safeTerm}')"
                     >
-                        View Timetable
+                        View Timetable <span aria-hidden="true">→</span>
                     </button>
                 </div>
-                <table class="schedule-table full-table"><thead><tr><th>Subject</th><th>Course &amp; Year</th><th>Teacher</th><th>Day</th><th>Time</th></tr></thead>
-                <tbody>${logicalSchedules.map(schedule => `<tr><td>${this.escapeHtml(schedule.subject)}</td><td>${this.escapeHtml(schedule.displayCourseYear)}</td><td>${this.escapeHtml(schedule.teacherName)}</td><td>${this.escapeHtml(schedule.day)}</td><td>${this.formatTime(schedule.startTime)} - ${this.formatTime(schedule.endTime)}</td></tr>`).join('')}</tbody></table>
-            </div>`;
+            </article>`;
         }).join('');
         list.insertAdjacentHTML(
             'beforeend',
             this.renderPagination('rooms', roomPage.totalItems)
         );
+    }
+
+    getRoomAssignmentSummary(schedules) {
+        const logicalSchedules = this.getLogicalScheduleRows(schedules);
+        const subjectCount = new Set(
+            logicalSchedules
+                .map(schedule => String(schedule.subject || '').trim().toLowerCase())
+                .filter(Boolean)
+        ).size;
+        const scheduledDays = new Set(
+            logicalSchedules.map(schedule => schedule.day)
+        );
+
+        return {
+            classCount: logicalSchedules.length,
+            subjectCount,
+            teachingDays: ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday']
+                .filter(day => scheduledDays.has(day))
+        };
     }
 
     renderManageView() {
