@@ -3,6 +3,20 @@
  * Run with: node qa-scheduler-logic.js
  */
 const fs = require('fs');
+require('./js/owner/owner-dashboard.js');
+
+const ownerDashboardPresentation =
+    globalThis.ScheduleStudioOwnerDashboard.getOwnerDashboardPresentation({
+        registeredUserCount: 4
+    });
+if (
+    ownerDashboardPresentation.scheduleCount !== 4 ||
+    ownerDashboardPresentation.scheduleLabel !== 'Registered users' ||
+    ownerDashboardPresentation.scheduleNote !== '' ||
+    ownerDashboardPresentation.hideStatCardsAfterIndex !== 0
+) {
+    throw new Error('Owner dashboard presentation instructions are incorrect.');
+}
 
 global.window = {};
 global.document = {
@@ -18,6 +32,7 @@ global.document = {
     }
 };
 
+eval(fs.readFileSync('curriculum-catalog.js', 'utf8'));
 eval(`${fs.readFileSync('script.js', 'utf8')}; globalThis.ScheduleManagerForQa = ScheduleManager;`);
 
 const manager = Object.create(globalThis.ScheduleManagerForQa.prototype);
@@ -195,6 +210,373 @@ const multipleMeetingRows = manager.getLogicalScheduleRows(manager.schedules);
 if (multipleMeetingRows.length !== 2) throw new Error('Different meetings under one combined ID were collapsed.');
 if (multipleMeetingRows.some(schedule => schedule.displayCourseYear !== 'BSEE - 1A + BSME - 1A + BSME - 1B')) throw new Error('A combined meeting did not retain all sections.');
 if (manager.getAllConflicts().length) throw new Error('Sibling section rows across meetings were reported as conflicts.');
+
+async function verifyCurriculumComponentOptions() {
+    const componentManager =
+        Object.create(globalThis.ScheduleManagerForQa.prototype);
+    const projectEntries = global.window.CURRICULUM_CATALOG.filter(entry =>
+        entry.program === 'BSCE' &&
+        Number(entry.year) === 4 &&
+        String(entry.term).toLowerCase() === '2nd semester' &&
+        String(entry.name).toLowerCase() === 'ce project 2'
+    );
+    const lec = projectEntries.find(entry => entry.delivery === 'lec');
+    const lab = projectEntries.find(entry => entry.delivery === 'lab');
+    if (!lec || !lab) {
+        throw new Error('Curriculum catalog is missing the audited CE Project 2 components.');
+    }
+    const subjectInput = { value: '', disabled: false };
+    const subjectList = { innerHTML: '', hidden: true };
+    const originalGetElementById = global.document.getElementById;
+
+    componentManager.term = '2nd semester';
+    componentManager.activeSchedulePeriod = { id: 'period-1', term: '2nd semester' };
+    componentManager.selectedClassSections = ['BSCE - 4A'];
+    componentManager.curriculumCatalog = [lec, lab, {
+        program: 'BSCE', year: 4, term: '1st semester',
+        code: 'CE-18', name: 'Current Term Subject',
+        lecHours: 3, labHours: 0, units: 3, delivery: 'lec'
+    }];
+    componentManager.selectedCurriculumOptionKey = null;
+    componentManager.schedules = [];
+    componentManager.updateSelectedSubjectDetails = () => {};
+    global.document.getElementById = id =>
+        id === 'subjectSelect' ? subjectInput :
+        id === 'subjectOptions' ? subjectList :
+        null;
+
+    const normalComponents =
+        componentManager.getSubjectsForSelectedClassSections();
+    if (
+        normalComponents.length !== 2 ||
+        !normalComponents.some(entry => entry.code === lec.code) ||
+        !normalComponents.some(entry => entry.code === lab.code)
+    ) {
+        throw new Error('Normal subject options collapsed CE Project 2 LEC/LAB components.');
+    }
+    global.document.activeElement = null;
+    componentManager.renderSubjectOptions('CE pro');
+    if (
+        !subjectList.innerHTML.includes('CE-19 LEC') ||
+        !subjectList.innerHTML.includes('CE-19 LAB') ||
+        !subjectList.innerHTML.includes('lec') ||
+        !subjectList.innerHTML.includes('lab') ||
+        !subjectList.innerHTML.includes('data-curriculum-key')
+    ) {
+        throw new Error('Subject dropdown did not display both CE Project 2 components.');
+    }
+
+    for (const entry of [lec, lab]) {
+        subjectInput.value = entry.name;
+        componentManager.selectedCurriculumOptionKey =
+            componentManager.getCurriculumOptionKey(entry);
+        const resolved = componentManager.getSelectedCurriculumEntry();
+        if (!resolved || resolved.code !== entry.code) {
+            throw new Error(`Selection did not resolve ${entry.code}.`);
+        }
+    }
+
+    componentManager.schedules = [
+        row({
+            subject: lec.name, courseCode: lec.code, delivery: lec.delivery,
+            lecHours: lec.lecHours, labHours: lec.labHours,
+            courseYear: 'BSCE - 4A', schedulePeriodId: 'period-1',
+            startTime: '08:00', endTime: '09:00'
+        }),
+        row({
+            subject: lab.name, courseCode: lab.code, delivery: lab.delivery,
+            lecHours: lab.lecHours, labHours: lab.labHours,
+            courseYear: 'BSCE - 4A', schedulePeriodId: 'period-1',
+            startTime: '09:00', endTime: '12:00'
+        })
+    ];
+    if (
+        componentManager.getSectionSubjectScheduledMinutes('BSCE - 4A', lec.name, lec) !== 60 ||
+        componentManager.getSectionSubjectScheduledMinutes('BSCE - 4A', lab.name, lab) !== 180 ||
+        componentManager.getSubjectRequiredWeeklyMinutes(lec.name, 'BSCE', lec) !== 60 ||
+        componentManager.getSubjectRequiredWeeklyMinutes(lab.name, 'BSCE', lab) !== 180
+    ) {
+        throw new Error('Scheduled minutes were not separated by curriculum component.');
+    }
+    componentManager.schedules = [
+        row({
+            subject: lec.name, courseCode: lec.code, delivery: lec.delivery,
+            lecHours: lec.lecHours, labHours: lec.labHours,
+            courseYear: 'BSCE - 4A', schedulePeriodId: 'period-1',
+            startTime: '08:00', endTime: '09:00'
+        })
+    ];
+    if (componentManager.isSubjectFullyScheduledForSelectedSections(lab)) {
+        throw new Error('Completing LEC incorrectly marked LAB fully scheduled.');
+    }
+    const lecRemaining =
+        componentManager.getSelectedSubjectRemainingHours(lec).join('; ');
+    const labRemaining =
+        componentManager.getSelectedSubjectRemainingHours(lab).join('; ');
+    if (
+        !lecRemaining.includes('0h remaining') ||
+        !labRemaining.includes('3h remaining')
+    ) {
+        throw new Error('Remaining hours did not use the selected curriculum component.');
+    }
+    componentManager.schedules.push(
+        row({
+            subject: lab.name, courseCode: lab.code, delivery: lab.delivery,
+            lecHours: lab.lecHours, labHours: lab.labHours,
+            courseYear: 'BSCE - 4A', schedulePeriodId: 'period-1',
+            startTime: '09:00', endTime: '12:00'
+        })
+    );
+    if (
+        !componentManager.isSubjectFullyScheduledForSelectedSections(lec) ||
+        !componentManager.isSubjectFullyScheduledForSelectedSections(lab)
+    ) {
+        throw new Error('LEC/LAB fully-scheduled checks did not remain independent.');
+    }
+    componentManager.schedules = [componentManager.schedules[1]];
+    if (componentManager.isSubjectFullyScheduledForSelectedSections(lec)) {
+        throw new Error('Completing LAB incorrectly marked LEC fully scheduled.');
+    }
+
+    componentManager.schedules = [
+        row({
+            subject: lec.name,
+            courseYear: 'BSCE - 4A',
+            schedulePeriodId: 'period-1',
+            startTime: '08:00',
+            endTime: '09:00'
+        })
+    ];
+    if (
+        componentManager.getSectionSubjectScheduledMinutes(
+            'BSCE - 4A',
+            lec.name,
+            lec
+        ) !== 0 ||
+        componentManager.getSectionSubjectScheduledMinutes(
+            'BSCE - 4A',
+            lab.name,
+            lab
+        ) !== 0
+    ) {
+        throw new Error('Ambiguous legacy schedule data was assigned to a LEC/LAB component.');
+    }
+
+    componentManager.term = '1st semester';
+    const exceptionComponents =
+        componentManager.getCrossTermSubjectsForSelectedClassSections('CE pro');
+    if (
+        exceptionComponents.length !== 2 ||
+        !exceptionComponents.some(entry => entry.code === lec.code) ||
+        !exceptionComponents.some(entry => entry.code === lab.code)
+    ) {
+        throw new Error('Prospectus exception search collapsed CE Project 2 LEC/LAB.');
+    }
+
+    componentManager.term = '1st semester';
+    componentManager.selectedClassSections = ['BSEE - 1A', 'BSME - 1A'];
+    componentManager.curriculumCatalog = [
+        {
+            program: 'BSEE', year: 1, term: '1st semester',
+            code: 'SHARED-LEC', name: 'Shared Component Subject',
+            lecHours: 3, labHours: 0, units: 3, delivery: 'lec'
+        },
+        {
+            program: 'BSEE', year: 1, term: '1st semester',
+            code: 'SHARED-LAB', name: 'Shared Component Subject',
+            lecHours: 0, labHours: 1, units: 1, delivery: 'lab'
+        },
+        {
+            program: 'BSME', year: 1, term: '1st semester',
+            code: 'SHARED-LEC', name: 'Shared Component Subject',
+            lecHours: 3, labHours: 0, units: 3, delivery: 'lec'
+        },
+        {
+            program: 'BSEE', year: 1, term: '1st semester',
+            code: 'UNIQUE-101', name: 'Single Component Subject',
+            lecHours: 3, labHours: 0, units: 3, delivery: 'lec'
+        },
+        {
+            program: 'BSME', year: 1, term: '1st semester',
+            code: 'UNIQUE-101', name: 'Single Component Subject',
+            lecHours: 3, labHours: 0, units: 3, delivery: 'lec'
+        }
+    ];
+    const combinedOptions =
+        componentManager.getSubjectsForSelectedClassSections();
+    if (
+        combinedOptions.filter(entry =>
+            entry.name === 'Shared Component Subject'
+        ).length !== 1 ||
+        combinedOptions.some(entry =>
+            entry.name === 'Shared Component Subject' &&
+            entry.delivery !== 'lec'
+        )
+    ) {
+        throw new Error('Multi-program options included a component missing from one program.');
+    }
+    if (
+        combinedOptions.filter(entry =>
+            entry.name === 'Single Component Subject'
+        ).length !== 1
+    ) {
+        throw new Error('Ordinary single-component subject behavior changed.');
+    }
+    subjectInput.value = 'Shared Component Subject';
+    componentManager.selectedCurriculumOptionKey =
+        componentManager.getCurriculumOptionKey(
+            componentManager.curriculumCatalog[0]
+        );
+    if (!componentManager.getSelectedCurriculumEntry()) {
+        throw new Error('Compatible component did not resolve across selected programs.');
+    }
+    componentManager.selectedCurriculumOptionKey =
+        componentManager.getCurriculumOptionKey(
+            componentManager.curriculumCatalog[1]
+        );
+    if (componentManager.getSelectedCurriculumEntry() !== null) {
+        throw new Error('Selection accepted a component missing from one selected program.');
+    }
+
+    componentManager.term = '2nd semester';
+    componentManager.activeSchedulePeriod.term = '2nd semester';
+    componentManager.selectedClassSections = ['BSCE - 4A'];
+    componentManager.curriculumCatalog = [lec, lab];
+    componentManager.schedules = [];
+    componentManager.remoteEnabled = false;
+    componentManager.ownerViewingUserId = null;
+    componentManager.currentUser = { id: 'user-1' };
+    componentManager.roomDetails = {};
+    componentManager.getTeacherDistinctSubjects = () => [];
+    componentManager.getSubjectEquivalencyKey = (subject, program) =>
+        `${program}:${subject}`;
+    componentManager.saveSchedules = () => {};
+    componentManager.showNotification = (message, type) => {
+        if (type === 'error') throw new Error(message);
+    };
+    componentManager.validateSchedule =
+        globalThis.ScheduleManagerForQa.prototype.validateSchedule;
+    componentManager.checkConflicts = () => ({
+        hasConflict: false,
+        conflicts: []
+    });
+    componentManager.renderTeacherOptions = () => {};
+    componentManager.renderCourseOptions = () => {};
+    componentManager.renderClassSectionOptions = () => {};
+    componentManager.renderSubjectOptions = () => {};
+    componentManager.render = () => {};
+    componentManager.resetScheduleSlots = () => {};
+    componentManager.updateRoomOptions = () => {};
+    componentManager.createLocalScheduleId = (() => {
+        let id = 0;
+        return () => `component-schedule-${++id}`;
+    })();
+
+    const slotValues = { room: 'R101', startTime: '08:00', endTime: '09:00' };
+    const scheduleSlot = {
+        querySelector(selector) {
+            if (selector === 'input[name="days"]:checked') {
+                return { value: 'Monday' };
+            }
+            const match = selector.match(/\[data-field="([^"]+)"\]/);
+            return match ? { value: slotValues[match[1]] || '' } : null;
+        },
+        querySelectorAll(selector) {
+            return selector === 'input[name="days"]:checked'
+                ? [{ value: 'Monday' }]
+                : [];
+        }
+    };
+    global.document.getElementById = id =>
+        id === 'subjectSelect' ? subjectInput :
+        id === 'teacherSelect' ? { value: 'TEACHER A' } :
+        id === 'scheduleForm' ? { reset() {} } :
+        null;
+    global.document.querySelectorAll = selector =>
+        selector === '#scheduleSlots .schedule-slot' ? [scheduleSlot] : [];
+
+    for (const entry of [lec, lab]) {
+        componentManager.selectedClassSections = ['BSCE - 4A'];
+        subjectInput.value = entry.name;
+        componentManager.selectedCurriculumOptionKey =
+            componentManager.getCurriculumOptionKey(entry);
+        await componentManager.handleAddSchedule({
+            preventDefault() {}
+        });
+        const created = componentManager.schedules.at(-1);
+        if (
+            !created ||
+            created.courseCode !== entry.code ||
+            created.delivery !== entry.delivery ||
+            created.lecHours !== entry.lecHours ||
+            created.labHours !== entry.labHours
+        ) {
+            throw new Error(`Schedule creation did not preserve ${entry.code} component data.`);
+        }
+    }
+
+    componentManager.schedules = [
+        row({
+            subject: 'CE Project 2',
+            courseCode: 'CE-19 LEC',
+            delivery: 'lec',
+            courseYear: 'BSCE - 4A',
+            day: 'Monday',
+            startTime: '08:00',
+            endTime: '09:00',
+            room: 'MPY 205'
+        }),
+        row({
+            subject: 'CE Project 2',
+            courseCode: 'CE-19 LAB',
+            delivery: 'lab',
+            courseYear: 'BSCE - 4A',
+            day: 'Monday',
+            startTime: '13:00',
+            endTime: '16:00',
+            room: 'MPY 204'
+        }),
+        row({
+            subject: 'MATHEMATICS',
+            courseCode: 'MATH 101',
+            delivery: '',
+            courseYear: 'BSCE - 4A',
+            day: 'Monday',
+            startTime: '16:00',
+            endTime: '17:00',
+            room: 'MPY 203'
+        })
+    ];
+    componentManager.getColorForSubject = () => '#ffffff';
+    componentManager.getTextColorForBg = () => '#000000';
+    componentManager.getLogicalScheduleRows = schedules => schedules;
+    componentManager.roomDetails = {};
+    const displaySlots = [
+        { start: '08:00', end: '08:30', label: '8:00 AM - 8:30 AM' },
+        { start: '13:00', end: '13:30', label: '1:00 PM - 1:30 PM' },
+        { start: '16:00', end: '16:30', label: '4:00 PM - 4:30 PM' }
+    ];
+    for (const audience of ['teacher', 'section', 'room']) {
+        const timetable = componentManager.buildScheduleGrid(
+            componentManager.schedules,
+            ['Monday'],
+            displaySlots,
+            audience
+        );
+        if (
+            !timetable.includes('CE Project 2 — LEC') ||
+            !timetable.includes('CE Project 2 — LAB')
+        ) {
+            throw new Error(`The ${audience} timetable did not distinguish LEC and LAB.`);
+        }
+        if (timetable.includes('MATHEMATICS —')) {
+            throw new Error(`The ${audience} timetable guessed a missing component label.`);
+        }
+    }
+
+    global.document.getElementById = originalGetElementById;
+}
+
 manager.schedules.push(row({
     combinedClassId: combinedId,
     day: 'Monday',
@@ -246,15 +628,18 @@ manager.render = () => {};
 manager.showNotification = () => {};
 manager.showEditMessage = message => { throw new Error(message); };
 
-manager.saveOwnerEdit({ preventDefault() {} }).then(() => {
-    if (manager.schedules.filter(schedule => schedule.day === 'Monday').some(schedule => schedule.startTime !== '07:30')) {
-        throw new Error('Combined meeting edit did not update all section sibling rows.');
-    }
-    if (manager.schedules.filter(schedule => schedule.day === 'Thursday').some(schedule => schedule.startTime !== '08:00')) {
-        throw new Error('Combined meeting edit overwrote a different meeting.');
-    }
-    console.log('Scheduling logic QA passed.');
-}).catch(error => {
-    console.error(error);
-    process.exitCode = 1;
-});
+verifyCurriculumComponentOptions()
+    .then(() => manager.saveOwnerEdit({ preventDefault() {} }))
+    .then(() => {
+        if (manager.schedules.filter(schedule => schedule.day === 'Monday').some(schedule => schedule.startTime !== '07:30')) {
+            throw new Error('Combined meeting edit did not update all section sibling rows.');
+        }
+        if (manager.schedules.filter(schedule => schedule.day === 'Thursday').some(schedule => schedule.startTime !== '08:00')) {
+            throw new Error('Combined meeting edit overwrote a different meeting.');
+        }
+        console.log('Scheduling logic QA passed.');
+    })
+    .catch(error => {
+        console.error(error);
+        process.exitCode = 1;
+    });

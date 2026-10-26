@@ -30,6 +30,7 @@ class ScheduleManager {
             ? window.CURRICULUM_CATALOG.map(entry => ({ ...entry, term: entry.term === '3rd term' ? 'summer' : entry.term }))
             : [];
         this.selectedCurriculumEntry = null;
+        this.selectedCurriculumOptionKey = null;
         this.selectedClassSections = [];
         this.classSectionSearchQuery = '';
         this.term = '';
@@ -134,6 +135,7 @@ class ScheduleManager {
             this.checkPrereqs();
         });
         document.getElementById('subjectSelect')?.addEventListener('input', () => {
+            this.selectedCurriculumOptionKey = null;
             this.renderSubjectOptions(document.getElementById('subjectSelect').value);
             this.updateSelectedSubjectDetails();
             this.checkPrereqs();
@@ -145,6 +147,8 @@ class ScheduleManager {
             if (!option) return;
             const input = document.getElementById('subjectSelect');
             input.value = option.dataset.subjectValue;
+            this.selectedCurriculumOptionKey =
+                option.dataset.curriculumKey || null;
             this.updateSelectedSubjectDetails();
             this.renderSubjectOptions();
             this.checkPrereqs();
@@ -152,6 +156,7 @@ class ScheduleManager {
         document.getElementById('subjectClearBtn')?.addEventListener('click', () => {
             const input = document.getElementById('subjectSelect');
             input.value = '';
+            this.selectedCurriculumOptionKey = null;
             input.focus();
             this.renderSubjectOptions();
             this.updateSelectedSubjectDetails();
@@ -339,6 +344,10 @@ class ScheduleManager {
         document.getElementById('ownerClearSelection')?.addEventListener('click', () => {
             this.ownerSelectedUserId = null;
             this.renderOwnerView();
+        });
+        document.getElementById('ownerUsersList')?.addEventListener('click', event => {
+            const card = event.target.closest('.owner-user-card[data-owner-user-id]');
+            if (card) this.selectOwnerUser(card.dataset.ownerUserId);
         });
         document.getElementById('ownerEditClose')?.addEventListener('click', () => this.closeOwnerEdit());
         document.getElementById('ownerEditCancel')?.addEventListener('click', () => this.closeOwnerEdit());
@@ -572,6 +581,16 @@ class ScheduleManager {
             );
         }
 
+        const selectedCurriculumEntry =
+            this.getSelectedCurriculumEntry();
+
+        if (!selectedCurriculumEntry) {
+            return this.showNotification(
+                'Select a valid subject option.',
+                'error'
+            );
+        }
+
         /*
         * A combined class is one teaching assignment even when
         * it contains multiple programs/sections.
@@ -680,7 +699,8 @@ class ScheduleManager {
                 this.getCurriculumEntryForProgramSubject(
                     normalizedSubject,
                     normalizedProgram,
-                    year
+                    year,
+                    selectedCurriculumEntry
                 );
 
             if (!curriculumEntry) {
@@ -696,7 +716,8 @@ class ScheduleManager {
             const existingWeeklyMinutes =
                 this.getSectionSubjectScheduledMinutes(
                     courseYear + section,
-                    curriculumEntry.name || subject
+                    curriculumEntry.name || subject,
+                    curriculumEntry
                 );
 
             /*
@@ -1554,15 +1575,29 @@ class ScheduleManager {
         setFraction('roomCount', unique('room'), this.rooms.length);
         const statCards = document.querySelectorAll('.dashboard .stat-card');
         if (this.isOwner) {
-            const labels = ['Registered users', 'Active teachers', 'Rooms in use'];
-            const notes = ['', '', ''];
+            const registeredUserCount = this.ownerProfiles.filter(
+                profile =>
+                    !['owner', 'school_admin'].includes(
+                        String(profile.role || '').toLowerCase()
+                    )
+            ).length;
+            const presentation =
+                window.ScheduleStudioOwnerDashboard.getOwnerDashboardPresentation({
+                    registeredUserCount
+                });
             statCards.forEach((card, index) => {
-                card.classList.toggle('owner-hidden-stat', index > 0);
+                card.classList.toggle(
+                    'owner-hidden-stat',
+                    index > presentation.hideStatCardsAfterIndex
+                );
                 const label = card.querySelector('.stat-label');
                 const note = card.querySelector('.stat-note');
-                if (index === 0) { if (label) label.textContent = labels[0]; if (note) note.textContent = notes[0]; }
+                if (index === 0) {
+                    if (label) label.textContent = presentation.scheduleLabel;
+                    if (note) note.textContent = presentation.scheduleNote;
+                }
             });
-            setText('scheduleCount', this.ownerProfiles.filter(profile => !['owner', 'school_admin'].includes(String(profile.role || '').toLowerCase())).length);
+            setText('scheduleCount', presentation.scheduleCount);
         }
         setText('scheduleHealth', allConflicts.length ? 'Needs review' : 'Ready');
         setText('healthNote', allConflicts.length ? `${allConflicts.length} existing conflict${allConflicts.length === 1 ? '' : 's'} found` : 'No conflicts detected');
@@ -2502,8 +2537,7 @@ class ScheduleManager {
 
     resetToMemberStartView() {
         this.ownerViewingUserId = null;
-        document.getElementById('appShell')?.classList.remove('owner-mode', 'owner-user-mode');
-        document.getElementById('ownerBackToUsers')?.classList.add('hidden');
+        window.ScheduleStudioOwnerNavigation.clearOwnerMode();
         document.querySelectorAll('.view-content').forEach(panel => panel.classList.remove('active'));
         document.getElementById('teacherView')?.classList.add('active');
         document.querySelectorAll('.toggle-btn').forEach(btn => btn.classList.toggle('active', btn.dataset.view === 'teacher'));
@@ -2514,32 +2548,34 @@ class ScheduleManager {
     renderOwnerView() {
         const view = document.getElementById('ownerView');
         if (!view) return;
-        const backButton = document.getElementById('ownerBackToUsers');
-        if (!this.ownerViewingUserId) backButton?.classList.add('hidden');
         if (!this.isOwner) {
+            if (!this.ownerViewingUserId) {
+                window.ScheduleStudioOwnerNavigation.setBackButtonVisible(false);
+            }
             view.classList.remove('active');
             return;
         }
         if (!this.ownerViewingUserId) {
-            document.getElementById('appShell')?.classList.remove('owner-user-mode');
-            document.getElementById('appShell')?.classList.add('owner-mode');
+            window.ScheduleStudioOwnerNavigation.showOwnerDirectory();
         }
         const list = document.getElementById('ownerUsersList');
         const count = document.getElementById('ownerUserCount');
         if (!list) return;
         const profiles = Array.isArray(this.ownerProfiles) ? this.ownerProfiles : [];
-        const userProfiles = profiles.filter(profile => !['owner', 'school_admin'].includes(String(profile.role || '').toLowerCase()));
-        if (count) count.textContent = `${userProfiles.length} account${userProfiles.length === 1 ? '' : 's'}`;
-        if (!userProfiles.length) { list.innerHTML = '<p class="empty-message">No regular user accounts found.</p>'; return; }
+        const directory = window.ScheduleStudioOwnerDirectory.renderOwnerDirectory({
+            profiles,
+            schedules: this.schedules,
+            escapeHtml: value => this.escapeHtml(value)
+        });
+        if (count) count.textContent = directory.countText;
+        if (!directory.accountCount) {
+            list.innerHTML = directory.html;
+            return;
+        }
         list.classList.remove('hidden');
         const selectedPanel = document.getElementById('ownerSelectedPanel');
         if (selectedPanel) selectedPanel.classList.add('hidden');
-        list.innerHTML = userProfiles.map(profile => {
-            const rows = this.schedules.filter(s => s.ownerId === profile.id).length;
-            const name = this.escapeHtml(profile.full_name || profile.email || 'Unnamed user');
-            const email = this.escapeHtml(profile.email || '');
-            return `<button type="button" class="owner-user-card" onclick="manager.selectOwnerUser('${String(profile.id).replace(/'/g, "\\'")}')"><span class="owner-avatar">${this.escapeHtml((profile.full_name || profile.email || '?').slice(0, 1).toUpperCase())}</span><span class="owner-user-info"><strong>${name}</strong><small>${email}</small></span><span class="owner-user-classes">${rows} scheduled class${rows === 1 ? '' : 'es'} <span>›</span></span></button>`;
-        }).join('');
+        list.innerHTML = directory.html;
         return;
         if (this.ownerSelectedUserId) {
             const profile = profiles.find(p => p.id === this.ownerSelectedUserId);
@@ -2567,7 +2603,7 @@ class ScheduleManager {
         if (this.remoteEnabled && this.supabase && ownerId) {
             const fresh = { teachers: [], subjects: [], rooms: [], courses: [] };
             for (const table of Object.keys(fresh)) {
-                const { data, error } = await this.selectCatalogRows(table, ownerId);
+                const { data, error } = await CatalogDataService.selectCatalogRows(this.supabase, table, ownerId);
                 if (!error && Array.isArray(data)) fresh[table] = data;
             }
             this.ownerCatalog[ownerId] = fresh;
@@ -2597,25 +2633,6 @@ class ScheduleManager {
         this.renderTeacherOptions(); this.renderSubjectOptions(); this.renderCourseOptions(); this.renderClassSectionOptions(); this.renderBuildingOptions(); this.renderRoomOptions(); this.renderRoomBuildingOptions(); this.renderSectionScheduleOptions();
     }
 
-    async selectCatalogRows(table, ownerId = null) {
-        const columns = {
-            teachers: ['id,owner_id,name'],
-            subjects: ['id,owner_id,name,course_code,units,lec_hours,lab_hours,delivery', 'id,owner_id,name,course_code,units', 'id,owner_id,name'],
-            rooms: ['id,owner_id,name,building', 'id,owner_id,name'],
-            courses: ['id,owner_id,name']
-        }[table] || ['id,owner_id,name'];
-
-        let lastResult = { data: [], error: null };
-        for (const selectedColumns of columns) {
-            let query = this.supabase.from(table).select(selectedColumns);
-            if (ownerId) query = query.eq('owner_id', ownerId);
-            const result = await query.order('name', { ascending: true });
-            if (!result.error) return result;
-            lastResult = result;
-        }
-        return lastResult;
-    }
-
     async selectOwnerUser(id) {
         if (!this.isOwner) return;
         const requestId = ++this.ownerRequestId;
@@ -2634,14 +2651,9 @@ class ScheduleManager {
             await this.refreshSchedulesForActivePeriod();
             if (requestId !== this.ownerRequestId || this.ownerViewingUserId !== id) return;
         }
-        document.getElementById('appShell')?.classList.remove('owner-mode');
-        document.getElementById('appShell')?.classList.add('owner-user-mode');
-        document.getElementById('ownerView')?.classList.remove('active');
-        document.getElementById('ownerBackToUsers')?.classList.remove('hidden');
-        document.querySelectorAll('.view-content').forEach(panel => panel.classList.remove('active'));
-        document.getElementById('teacherView')?.classList.add('active');
-        document.querySelectorAll('.toggle-btn').forEach(btn => btn.classList.remove('active'));
-        document.querySelector('.toggle-btn[data-view="teacher"]')?.classList.add('active');
+        window.ScheduleStudioOwnerNavigation.showSelectedUserWorkspace({
+            showBackButton: true
+        });
         this.render();
         this.renderTeacherOptions(); this.renderSubjectOptions(); this.renderCourseOptions(); this.renderClassSectionOptions(); this.renderBuildingOptions(); this.renderRoomOptions();
     }
@@ -2654,11 +2666,9 @@ class ScheduleManager {
         this.ownerSelectedUserId = null;
         this.loadOwnerCatalog(this.currentUser?.id);
         sessionStorage.removeItem('scheduleStudioOwnerUser');
-        document.getElementById('appShell')?.classList.remove('owner-user-mode');
-        document.getElementById('appShell')?.classList.add('owner-mode');
-        document.getElementById('ownerBackToUsers')?.classList.add('hidden');
-        document.querySelectorAll('.view-content').forEach(panel => panel.classList.remove('active'));
-        document.getElementById('ownerView')?.classList.add('active');
+        window.ScheduleStudioOwnerNavigation.showOwnerDirectory({
+            resetViews: true
+        });
         this.render();
         // Rebuild the owner overview from the authoritative remote scope.
         this.syncFromRemote();
@@ -3000,9 +3010,15 @@ class ScheduleManager {
             const bg = this.getColorForSubject(schedule.subject);
             const fg = this.getTextColorForBg(bg);
             const building = schedule.building || ((this.roomDetails[schedule.room] || {}).building) || '';
+            const delivery =
+                String(schedule.delivery || '').trim().toLowerCase();
+            const componentLabel =
+                delivery === 'lec' ? 'LEC' :
+                delivery === 'lab' ? 'LAB' :
+                '';
             const content = `
                 <div class="cell-content">
-                    <div class="subject">${schedule.subject}</div>
+                    <div class="subject">${schedule.subject}${componentLabel ? ` — ${componentLabel}` : ''}</div>
                     <div class="section">${audience === 'section' ? schedule.teacherName : (schedule.displayCourseYear || schedule.courseYear)}</div>
                     ${building ? `<div class="building">${building}</div>` : ''}
                     <div class="room">${schedule.room}</div>
@@ -3609,19 +3625,110 @@ class ScheduleManager {
         return `${normalizedProgram}:${normalizedSubject}`;
     }
 
-    getSubjectRequiredWeeklyMinutes(subject, program = '') {
+    getCurriculumComponentKey(entry) {
+        if (!entry) return '';
+
+        return JSON.stringify([
+            this.normalizeProgram(entry.program).toLowerCase(),
+            String(entry.name || '').trim().toLowerCase(),
+            String(entry.code || entry.courseCode || '').trim().toLowerCase(),
+            String(entry.delivery || '').trim().toLowerCase()
+        ]);
+    }
+
+    getCurriculumOptionKey(entry) {
+        if (!entry) return '';
+
+        return JSON.stringify([
+            this.normalizeProgram(entry.program).toLowerCase(),
+            String(entry.year ?? '').trim(),
+            String(entry.term || '').trim().toLowerCase(),
+            String(entry.name || '').trim().toLowerCase(),
+            String(entry.code || entry.courseCode || '').trim().toLowerCase(),
+            String(entry.delivery || '').trim().toLowerCase(),
+            Number(entry.lecHours) || 0,
+            Number(entry.labHours) || 0,
+            Number(entry.units) || 0
+        ]);
+    }
+
+    getCurriculumEntryForComponent(entry, candidates) {
+        if (!entry || !Array.isArray(candidates)) return null;
+
+        const normalizedName =
+            String(entry.name || '').trim().toLowerCase();
+        const normalizedCode =
+            String(entry.code || entry.courseCode || '').trim().toLowerCase();
+        const normalizedDelivery =
+            String(entry.delivery || '').trim().toLowerCase();
+
+        const sameName = candidates.filter(candidate =>
+            String(candidate.name || '').trim().toLowerCase() === normalizedName
+        );
+
+        if (normalizedCode) {
+            const exactMatches = sameName.filter(candidate =>
+                String(candidate.code || candidate.courseCode || '')
+                    .trim()
+                    .toLowerCase() === normalizedCode &&
+                (!normalizedDelivery ||
+                    !String(candidate.delivery || '').trim() ||
+                    String(candidate.delivery || '').trim().toLowerCase() ===
+                        normalizedDelivery)
+            );
+
+            if (exactMatches.length) {
+                const exactDeliveries = new Set(exactMatches.map(candidate =>
+                    String(candidate.delivery || '').trim().toLowerCase()
+                ));
+
+                return exactDeliveries.size === 1
+                    ? exactMatches[0]
+                    : null;
+            }
+        }
+
+        if (normalizedDelivery) {
+            const deliveryMatches = sameName.filter(candidate =>
+                String(candidate.delivery || '').trim().toLowerCase() ===
+                    normalizedDelivery
+            );
+            const distinctCodes = new Set(deliveryMatches.map(candidate =>
+                String(candidate.code || candidate.courseCode || '')
+                    .trim()
+                    .toLowerCase()
+            ));
+
+            return distinctCodes.size === 1
+                ? deliveryMatches[0] || null
+                : null;
+        }
+
+        return sameName.length === 1 ? sameName[0] : null;
+    }
+
+    getSubjectRequiredWeeklyMinutes(subject, program = '', component = null) {
         const normalizedSubject =
             String(subject || '').trim().toLowerCase();
 
         const normalizedProgram =
             this.normalizeProgram(program);
 
-        const entry = this.curriculumCatalog.find(item =>
+        const matchingEntries = this.curriculumCatalog.filter(item =>
             String(item.name || '').trim().toLowerCase() ===
                 normalizedSubject &&
             (!normalizedProgram ||
                 this.normalizeProgram(item.program) === normalizedProgram)
         );
+        const entry = component
+            ? matchingEntries.find(item =>
+                this.getCurriculumOptionKey(item) ===
+                    this.getCurriculumOptionKey(component)
+            ) || this.getCurriculumEntryForComponent(
+                component,
+                matchingEntries
+            )
+            : matchingEntries[0];
 
         if (!entry) {
             return 0;
@@ -3639,7 +3746,72 @@ class ScheduleManager {
         return (lecHours * 60) + (labHours * 3 * 60);
     }
 
-    getSectionSubjectScheduledMinutes(courseYear, subject) {
+    isScheduleForCurriculumComponent(schedule, courseYear, entry) {
+        if (!entry) return true;
+
+        const scheduleCode =
+            String(schedule.courseCode || '').trim().toLowerCase();
+        const entryCode =
+            String(entry.code || entry.courseCode || '').trim().toLowerCase();
+        const entryDelivery =
+            String(entry.delivery || '').trim().toLowerCase();
+        const scheduleDelivery =
+            String(schedule.delivery || '').trim().toLowerCase();
+
+        if (scheduleCode && entryCode && scheduleCode === entryCode) {
+            return !scheduleDelivery ||
+                !entryDelivery ||
+                scheduleDelivery === entryDelivery;
+        }
+
+        let inferredDelivery =
+            scheduleDelivery === 'lec' || scheduleDelivery === 'lab'
+                ? scheduleDelivery
+                : '';
+
+        if (!inferredDelivery && /\bLAB(?:ORATORY)?\b/i.test(scheduleCode)) {
+            inferredDelivery = 'lab';
+        } else if (!inferredDelivery && /\bLEC(?:TURE)?\b/i.test(scheduleCode)) {
+            inferredDelivery = 'lec';
+        }
+
+        if (!inferredDelivery) {
+            const labHours = Number(schedule.labHours) || 0;
+            const lecHours = Number(schedule.lecHours) || 0;
+
+            if (labHours > 0 && lecHours === 0) {
+                inferredDelivery = 'lab';
+            } else if (lecHours > 0 && labHours === 0) {
+                inferredDelivery = 'lec';
+            }
+        }
+
+        if (inferredDelivery && entryDelivery) {
+            return inferredDelivery === entryDelivery;
+        }
+
+        const [program, yearWithSection] =
+            String(courseYear).split(' - ');
+        const yearMatch =
+            String(yearWithSection || '').match(/^(\d+)/);
+        const matchingEntries = this.curriculumCatalog.filter(item =>
+            String(item.name || '').trim().toLowerCase() ===
+                String(entry.name || '').trim().toLowerCase() &&
+            this.normalizeProgram(item.program) ===
+                this.normalizeProgram(program) &&
+            (!yearMatch || String(item.year) === yearMatch[1])
+        );
+        const distinctComponents = new Set(matchingEntries.map(item =>
+            JSON.stringify([
+                String(item.code || item.courseCode || '').trim().toLowerCase(),
+                String(item.delivery || '').trim().toLowerCase()
+            ])
+        ));
+
+        return distinctComponents.size === 1;
+    }
+
+    getSectionSubjectScheduledMinutes(courseYear, subject, component = null) {
         if (!courseYear || !subject || !this.activeSchedulePeriod) {
             return 0;
         }
@@ -3664,6 +3836,13 @@ class ScheduleManager {
                 String(schedule.subject || '')
                     .trim()
                     .toLowerCase() === normalizedSubject
+            )
+            .filter(schedule =>
+                this.isScheduleForCurriculumComponent(
+                    schedule,
+                    courseYear,
+                    component
+                )
             )
             .reduce((total, schedule) => {
                 const start =
@@ -3960,29 +4139,98 @@ class ScheduleManager {
             .filter(Boolean);
     }
 
-    getCurriculumEntryForProgramSubject(subject, program, preferredYear = '') {
+    getCurriculumEntryForProgramSubject(
+        subject,
+        program,
+        preferredYear = '',
+        component = null
+    ) {
         const normalizedSubject = String(subject || '').trim().toLowerCase();
         const normalizedProgram = this.normalizeProgram(program);
         const activeTerm = String(this.term || '').trim().toLowerCase();
 
-        return this.curriculumCatalog
+        let entries = this.curriculumCatalog
             .filter(entry =>
                 String(entry.name || '').trim().toLowerCase() === normalizedSubject &&
                 this.normalizeProgram(entry.program) === normalizedProgram
-            )
-            .sort((a, b) => {
-                const score = entry =>
-                    (String(entry.year) === String(preferredYear) ? 2 : 0) +
-                    (String(entry.term || '').trim().toLowerCase() === activeTerm ? 1 : 0);
-                const scoreDifference = score(b) - score(a);
-                if (scoreDifference) return scoreDifference;
+            );
 
-                return Number(a.year) - Number(b.year) ||
-                    String(a.term || '').localeCompare(String(b.term || '')) ||
-                    String(a.code || a.courseCode || '').localeCompare(
-                        String(b.code || b.courseCode || '')
-                    );
-            })[0] || null;
+        if (component) {
+            const componentCode =
+                String(component.code || component.courseCode || '')
+                    .trim()
+                    .toLowerCase();
+            const componentDelivery =
+                String(component.delivery || '').trim().toLowerCase();
+            let exactMatches = entries.filter(entry =>
+                componentCode &&
+                String(entry.code || entry.courseCode || '')
+                    .trim()
+                    .toLowerCase() === componentCode &&
+                (!componentDelivery ||
+                    !String(entry.delivery || '').trim() ||
+                    String(entry.delivery || '').trim().toLowerCase() ===
+                        componentDelivery)
+            );
+            const exactDeliveryTypes = new Set(exactMatches.map(entry =>
+                String(entry.delivery || '').trim().toLowerCase()
+            ));
+            if (!componentDelivery && exactDeliveryTypes.size > 1) {
+                exactMatches = [];
+            }
+
+            const exactYearMatches = exactMatches.filter(entry =>
+                String(entry.year) === String(preferredYear)
+            );
+            const deliveryMatches = componentDelivery
+                ? entries.filter(entry =>
+                    String(entry.delivery || '').trim().toLowerCase() ===
+                        componentDelivery
+                )
+                : [];
+            const deliveryYearMatches = deliveryMatches.filter(entry =>
+                String(entry.year) === String(preferredYear)
+            );
+
+            if (exactYearMatches.length) {
+                entries = exactYearMatches;
+            } else if (deliveryYearMatches.length) {
+                entries = deliveryYearMatches;
+            } else if (exactMatches.length) {
+                entries = exactMatches;
+            } else if (deliveryMatches.length) {
+                entries = deliveryMatches;
+            } else if (componentDelivery) {
+                entries = [];
+            } else {
+                const distinctComponents = new Set(entries.map(entry =>
+                    JSON.stringify([
+                        String(entry.code || entry.courseCode || '')
+                            .trim()
+                            .toLowerCase(),
+                        String(entry.delivery || '').trim().toLowerCase()
+                    ])
+                ));
+
+                entries = distinctComponents.size === 1
+                    ? entries
+                    : [];
+            }
+        }
+
+        return entries.sort((a, b) => {
+            const score = entry =>
+                (String(entry.year) === String(preferredYear) ? 2 : 0) +
+                (String(entry.term || '').trim().toLowerCase() === activeTerm ? 1 : 0);
+            const scoreDifference = score(b) - score(a);
+            if (scoreDifference) return scoreDifference;
+
+            return Number(a.year) - Number(b.year) ||
+                String(a.term || '').localeCompare(String(b.term || '')) ||
+                String(a.code || a.courseCode || '').localeCompare(
+                    String(b.code || b.courseCode || '')
+                );
+        })[0] || null;
     }
 
     getCrossTermSubjectsForSelectedClassSections(query = '') {
@@ -3998,15 +4246,6 @@ class ScheduleManager {
                 .trim()
                 .toLowerCase()
                 .replace(/[^a-z0-9]/g, '');
-
-        const sectionPrograms = [
-            ...new Set(selectedSections.map(item => {
-                const [program] =
-                    item.courseYear.split(' - ');
-
-                return this.normalizeProgram(program);
-            }))
-        ];
 
         const matchingSubjects = new Map();
 
@@ -4038,36 +4277,80 @@ class ScheduleManager {
             matchingSubjects.get(normalizedName).push(entry);
         });
 
-        const normalSubjectNames = new Set(
+        const normalComponentKeys = new Set(
             this.getSubjectsForSelectedClassSections()
-                .map(entry => String(entry.name || '').trim().toLowerCase())
+                .map(entry => this.getCurriculumComponentKey(entry))
         );
+        const [firstProgram, firstYear] =
+            selectedSections[0].courseYear.split(' - ');
+        const normalizedFirstProgram =
+            this.normalizeProgram(firstProgram);
 
         return [...matchingSubjects.entries()]
-            .map(([subjectName, matchingEntries]) => {
-                if (normalSubjectNames.has(subjectName)) return null;
+            .flatMap(([subjectName, matchingEntries]) => {
+                const firstProgramEntries = this.curriculumCatalog.filter(entry =>
+                    String(entry.name || '').trim().toLowerCase() === subjectName &&
+                    this.normalizeProgram(entry.program) === normalizedFirstProgram
+                );
+                const componentKeys = new Set(firstProgramEntries.map(entry =>
+                    this.getCurriculumComponentKey(entry)
+                ));
 
-                const programEntries = sectionPrograms.map(program => {
-                    const selectedProgramEntries = this.curriculumCatalog.filter(entry =>
-                        String(entry.name || '').trim().toLowerCase() === subjectName &&
-                        this.normalizeProgram(entry.program) === program
+                return [...componentKeys].map(componentKey => {
+                    const template = firstProgramEntries.find(entry =>
+                        this.getCurriculumComponentKey(entry) === componentKey
+                    );
+                    const entry = this.getCurriculumEntryForProgramSubject(
+                        subjectName,
+                        normalizedFirstProgram,
+                        firstYear,
+                        template
                     );
 
-                    if (!selectedProgramEntries.length) return null;
+                    if (!entry || normalComponentKeys.has(componentKey)) {
+                        return null;
+                    }
 
-                    return selectedProgramEntries;
+                    const queryMatchesComponent = matchingEntries.some(match => {
+                        if (
+                            String(match.delivery || '').trim().toLowerCase() !==
+                            String(entry.delivery || '').trim().toLowerCase()
+                        ) {
+                            return false;
+                        }
+
+                        return String(match.code || match.courseCode || '')
+                            .trim()
+                            .toLowerCase() ===
+                                String(entry.code || entry.courseCode || '')
+                                    .trim()
+                                    .toLowerCase() ||
+                            Boolean(this.getCurriculumEntryForProgramSubject(
+                                subjectName,
+                                match.program,
+                                firstYear,
+                                entry
+                            ));
+                    });
+
+                    if (!queryMatchesComponent) {
+                        return null;
+                    }
+
+                    const compatibleAcrossSections = selectedSections.every(section => {
+                        const [program, year] =
+                            section.courseYear.split(' - ');
+
+                        return Boolean(this.getCurriculumEntryForProgramSubject(
+                            subjectName,
+                            program,
+                            year,
+                            entry
+                        ));
+                    });
+
+                    return compatibleAcrossSections ? entry : null;
                 });
-
-                if (programEntries.some(entries => !entries)) return null;
-                if (!matchingEntries.length) return null;
-
-                const [firstProgram, firstYear] =
-                    selectedSections[0].courseYear.split(' - ');
-                return this.getCurriculumEntryForProgramSubject(
-                    subjectName,
-                    firstProgram,
-                    firstYear
-                );
             })
             .filter(Boolean)
             .sort((a, b) =>
@@ -4099,7 +4382,8 @@ class ScheduleManager {
                 .trim()
                 .toLowerCase();
 
-        const subjectNames = [
+        const firstSection = sectionPrograms[0];
+        const optionKeys = [
             ...new Set(
                 this.curriculumCatalog
                     .filter(entry =>
@@ -4108,16 +4392,27 @@ class ScheduleManager {
                             .trim()
                             .toLowerCase() === activeTerm
                     )
-                    .map(entry =>
-                        String(entry.name || '')
-                            .trim()
-                            .toLowerCase()
+                    .filter(entry =>
+                        this.normalizeProgram(entry.program) ===
+                            firstSection.program &&
+                        String(entry.year) === firstSection.year
                     )
+                    .map(entry => this.getCurriculumOptionKey(entry))
             )
         ];
 
-        return subjectNames
-            .map(subjectName => {
+        return optionKeys
+            .map(optionKey => {
+                const candidate = this.curriculumCatalog.find(entry =>
+                    this.getCurriculumOptionKey(entry) === optionKey &&
+                    (
+                        !activeTerm ||
+                        String(entry.term || '').trim().toLowerCase() === activeTerm
+                    )
+                );
+
+                if (!candidate) return null;
+
                 const entriesForAllSections =
                     sectionPrograms.map(section =>
                         this.curriculumCatalog.filter(entry =>
@@ -4127,9 +4422,8 @@ class ScheduleManager {
                                     .trim()
                                     .toLowerCase() === activeTerm
                             ) &&
-                            String(entry.name || '')
-                                .trim()
-                                .toLowerCase() === subjectName &&
+                            String(entry.name || '').trim().toLowerCase() ===
+                                String(candidate.name || '').trim().toLowerCase() &&
                             this.normalizeProgram(entry.program) ===
                                 section.program &&
                             String(entry.year) === section.year
@@ -4145,7 +4439,15 @@ class ScheduleManager {
                     return null;
                 }
 
-                return entriesForAllSections[0][0];
+                const matchingEntries = entriesForAllSections.map(entries =>
+                    this.getCurriculumEntryForComponent(candidate, entries)
+                );
+
+                if (matchingEntries.some(entry => !entry)) {
+                    return null;
+                }
+
+                return matchingEntries[0];
             })
             .filter(Boolean)
             .sort((a, b) =>
@@ -4208,7 +4510,8 @@ class ScheduleManager {
                     type="button"
                     class="subject-option"
                     role="option"
-                    data-subject-value="${this.escapeHtml(entry.name)}">
+                    data-subject-value="${this.escapeHtml(entry.name)}"
+                    data-curriculum-key="${this.escapeHtml(this.getCurriculumOptionKey(entry))}">
 
                     <strong>
                         ${this.escapeHtml(entry.name)}
@@ -4228,7 +4531,8 @@ class ScheduleManager {
                     type="button"
                     class="subject-option subject-option-exception"
                     role="option"
-                    data-subject-value="${this.escapeHtml(entry.name)}">
+                    data-subject-value="${this.escapeHtml(entry.name)}"
+                    data-curriculum-key="${this.escapeHtml(this.getCurriculumOptionKey(entry))}">
 
                     <strong>
                         ${this.escapeHtml(entry.name)}
@@ -4279,19 +4583,19 @@ class ScheduleManager {
             const [program, yearText] = courseYear.split(' - ');
             const normalizedProgram = this.normalizeProgram(program);
             const normalizedName = String(entry.name || '').trim().toLowerCase();
-            const matchingEntries = this.curriculumCatalog.filter(item =>
-                String(item.name || '').trim().toLowerCase() === normalizedName &&
-                this.normalizeProgram(item.program) === normalizedProgram &&
-                String(item.year) === String(yearText)
-            );
-            const curriculumEntry = matchingEntries.find(item =>
-                String(item.term || '').trim().toLowerCase() === String(this.term || '').trim().toLowerCase()
-            ) || matchingEntries[0];
+            const curriculumEntry =
+                this.getCurriculumEntryForProgramSubject(
+                    normalizedName,
+                    normalizedProgram,
+                    yearText,
+                    entry
+                );
             if (!curriculumEntry) return false;
             const required = this.getCurriculumEntryRequiredWeeklyMinutes(curriculumEntry);
             return required > 0 && this.getSectionSubjectScheduledMinutes(
                 `${courseYear}${section}`,
-                curriculumEntry.name
+                curriculumEntry.name,
+                curriculumEntry
             ) >= required;
         });
     }
@@ -4548,31 +4852,75 @@ class ScheduleManager {
             return null;
         }
 
-        const normalizedSubject = subject.toLowerCase();
-        const selectedPrograms = [
-            ...new Set(selectedSections.map(item => {
-                const [program] = item.courseYear.split(' - ');
-                return this.normalizeProgram(program);
-            }))
-        ];
-        const entriesByProgram = selectedPrograms.map(program =>
-            this.curriculumCatalog.filter(entry =>
-                String(entry.name || '').trim().toLowerCase() === normalizedSubject &&
-                this.normalizeProgram(entry.program) === program
-            )
-        );
+        const normalizedSubject =
+            subject.toLowerCase();
+        const [firstProgram, firstYear] =
+            selectedSections[0].courseYear.split(' - ');
+        const normalizedFirstProgram =
+            this.normalizeProgram(firstProgram);
+        const componentKey =
+            this.selectedCurriculumOptionKey;
 
-        if (entriesByProgram.some(entries => !entries.length)) {
+        if (componentKey) {
+            const selectedEntry = this.curriculumCatalog.find(entry =>
+                this.getCurriculumOptionKey(entry) === componentKey &&
+                String(entry.name || '').trim().toLowerCase() ===
+                    normalizedSubject
+            );
+
+            if (!selectedEntry) {
+                return null;
+            }
+
+            const compatibleAcrossSections = selectedSections.every(section => {
+                const [program, year] =
+                    section.courseYear.split(' - ');
+
+                return Boolean(this.getCurriculumEntryForProgramSubject(
+                    normalizedSubject,
+                    program,
+                    year,
+                    selectedEntry
+                ));
+            });
+
+            return compatibleAcrossSections ? selectedEntry : null;
+        }
+
+        const candidateEntries = this.curriculumCatalog.filter(entry =>
+            String(entry.name || '').trim().toLowerCase() ===
+                normalizedSubject &&
+            this.normalizeProgram(entry.program) === normalizedFirstProgram
+        );
+        const componentKeys = new Set(candidateEntries.map(entry =>
+            this.getCurriculumComponentKey(entry)
+        ));
+
+        if (componentKeys.size !== 1) {
             return null;
         }
 
-        const [firstProgram] = selectedSections[0].courseYear.split(' - ');
-        const [, firstYear] = selectedSections[0].courseYear.split(' - ');
-        return this.getCurriculumEntryForProgramSubject(
-            normalizedSubject,
-            firstProgram,
-            firstYear
-        );
+        const candidate = candidateEntries[0];
+        const compatibleAcrossSections = selectedSections.every(section => {
+            const [program, year] =
+                section.courseYear.split(' - ');
+
+            return Boolean(this.getCurriculumEntryForProgramSubject(
+                normalizedSubject,
+                program,
+                year,
+                candidate
+            ));
+        });
+
+        return compatibleAcrossSections
+            ? this.getCurriculumEntryForProgramSubject(
+                normalizedSubject,
+                normalizedFirstProgram,
+                firstYear,
+                candidate
+            )
+            : null;
     }
 
     updateSelectedSubjectDetails() {
@@ -4593,18 +4941,21 @@ class ScheduleManager {
         return this.getSelectedClassSectionParts().map(({ courseYear, section }) => {
             const [program, yearText] = courseYear.split(' - ');
             const normalizedName = String(entry.name || '').trim().toLowerCase();
-            const matching = this.curriculumCatalog.filter(item =>
-                String(item.name || '').trim().toLowerCase() === normalizedName &&
-                this.normalizeProgram(item.program) === this.normalizeProgram(program) &&
-                String(item.year) === String(yearText)
-            );
-            const subjectEntry = matching.find(item =>
-                String(item.term || '').trim().toLowerCase() === String(this.term || '').trim().toLowerCase()
-            ) || matching[0];
+            const subjectEntry =
+                this.getCurriculumEntryForProgramSubject(
+                    normalizedName,
+                    program,
+                    yearText,
+                    entry
+                );
             if (!subjectEntry) return '';
             const requiredMinutes = this.getCurriculumEntryRequiredWeeklyMinutes(subjectEntry);
             if (!requiredMinutes) return '';
-            const scheduledMinutes = this.getSectionSubjectScheduledMinutes(`${courseYear}${section}`, subjectEntry.name);
+            const scheduledMinutes = this.getSectionSubjectScheduledMinutes(
+                `${courseYear}${section}`,
+                subjectEntry.name,
+                subjectEntry
+            );
             return `${courseYear}${section}: ${Math.max(0, requiredMinutes - scheduledMinutes) / 60}h remaining`;
         }).filter(Boolean);
     }
@@ -4905,7 +5256,9 @@ class ScheduleManager {
             identity.classList.remove('hidden');
         }
         if (signOutBtn) signOutBtn.classList.remove('hidden');
-        if (!this.ownerViewingUserId) document.getElementById('ownerBackToUsers')?.classList.add('hidden');
+        if (!this.ownerViewingUserId) {
+            window.ScheduleStudioOwnerNavigation.setBackButtonVisible(false);
+        }
         this.syncFromRemote();
     }
 
@@ -5045,12 +5398,11 @@ class ScheduleManager {
             return [];
         }
 
-        const { data, error } = await this.supabase
-            .from('schedule_periods')
-            .select('id,owner_id,school_year,term,created_at')
-            .eq('owner_id', ownerId)
-            .order('school_year', { ascending: false })
-            .order('term', { ascending: true });
+        const { data, error } =
+            await SchedulePeriodDataService.fetchPeriods(
+                this.supabase,
+                ownerId
+            );
 
         if (error) {
             console.warn(
@@ -5490,17 +5842,14 @@ class ScheduleManager {
         }
 
         const { data, error } =
-            await this.supabase
-                .from('schedule_periods')
-                .insert({
-                    owner_id: ownerId,
-                    school_year: schoolYear,
+            await SchedulePeriodDataService.createPeriod(
+                this.supabase,
+                {
+                    ownerId,
+                    schoolYear,
                     term
-                })
-                .select(
-                    'id,owner_id,school_year,term,created_at'
-                )
-                .single();
+                }
+            );
 
         if (error) {
             console.error(
@@ -5747,16 +6096,16 @@ class ScheduleManager {
 
         const syncId = this.syncRequestId;
         const syncPeriodRequestId = this.periodRequestId;
+        const syncOwnerRequestId = this.ownerRequestId;
         const syncUserId = this.currentUser.id;
-        const syncOwnerViewingUserId = this.ownerViewingUserId || null;
+        let syncOwnerViewingUserId = this.ownerViewingUserId || null;
+        let restoredRememberedUserId = null;
 
         try {
         this.showNotification('Syncing from remote...', 'success');
 
-        const { data: profiles, error: profileError } = await this.supabase
-            .from('profiles')
-            .select('id,email,full_name,department,role,created_at')
-            .order('created_at', { ascending: true });
+        const { data: profiles, error: profileError } =
+            await ProfileDataService.fetchProfiles(this.supabase);
 
         if (profileError) {
             console.warn('Supabase profile read error:', profileError.message || profileError);
@@ -5783,6 +6132,47 @@ class ScheduleManager {
             String(ownProfile?.role || '').toLowerCase()
         );
 
+        if (
+            this.isOwner &&
+            !this.ownerViewingUserId &&
+            this.pendingOwnerViewingUserId &&
+            syncOwnerRequestId === this.ownerRequestId &&
+            this.ownerViewingUserId === syncOwnerViewingUserId
+        ) {
+            const pendingUserId = this.pendingOwnerViewingUserId;
+            const rememberedProfile = this.ownerProfiles.find(
+                profile =>
+                    profile.id === pendingUserId &&
+                    !['owner', 'school_admin'].includes(
+                        String(profile.role || '').toLowerCase()
+                    )
+            );
+
+            if (
+                rememberedProfile &&
+                sessionStorage.getItem('scheduleStudioOwnerUser') === pendingUserId
+            ) {
+                restoredRememberedUserId = pendingUserId;
+                this.pendingOwnerViewingUserId = null;
+                this.ownerViewingUserId = pendingUserId;
+                this.ownerSelectedUserId = pendingUserId;
+                syncOwnerViewingUserId = pendingUserId;
+                this.schedules = [];
+                this.ownerAllSchedules = [];
+                this.schedulePeriods = [];
+                this.activeSchedulePeriod = null;
+            } else {
+                this.pendingOwnerViewingUserId = null;
+                this.ownerViewingUserId = null;
+                this.ownerSelectedUserId = null;
+                this.schedules = [];
+                this.ownerAllSchedules = [];
+                this.schedulePeriods = [];
+                this.activeSchedulePeriod = null;
+                sessionStorage.removeItem('scheduleStudioOwnerUser');
+            }
+        }
+
         this.ownerCatalog = {};
 
         const activePeriodOwnerId =
@@ -5791,7 +6181,10 @@ class ScheduleManager {
         if (activePeriodOwnerId) {
             await this.loadSchedulePeriods(activePeriodOwnerId);
 
-            if (syncPeriodRequestId !== this.periodRequestId) {
+            if (
+                syncPeriodRequestId !== this.periodRequestId ||
+                syncOwnerRequestId !== this.ownerRequestId
+            ) {
                 console.debug('Ignoring sync because schedule period changed.');
                 return;
             }
@@ -5813,10 +6206,10 @@ class ScheduleManager {
         // helper retries with a backward-compatible column list instead of
         // making the entire workspace fail to load.
         const catalogQueries = [
-            this.selectCatalogRows('teachers', ownerScope),
-            this.selectCatalogRows('subjects', ownerScope),
-            this.selectCatalogRows('rooms', ownerScope),
-            this.selectCatalogRows('courses', ownerScope)
+            CatalogDataService.selectCatalogRows(this.supabase, 'teachers', ownerScope),
+            CatalogDataService.selectCatalogRows(this.supabase, 'subjects', ownerScope),
+            CatalogDataService.selectCatalogRows(this.supabase, 'rooms', ownerScope),
+            CatalogDataService.selectCatalogRows(this.supabase, 'courses', ownerScope)
         ];
 
         let scheduleQuery = this.supabase
@@ -5842,8 +6235,11 @@ class ScheduleManager {
             );
         }
 
+        const isSelectedOwnerView =
+            this.isOwner && !!this.ownerViewingUserId;
+
         const scheduleRequest =
-            !this.isOwner && !syncActivePeriodId
+            (!this.isOwner || isSelectedOwnerView) && !syncActivePeriodId
                 ? Promise.resolve({ data: [], error: null })
                 : scheduleQuery;
 
@@ -5856,7 +6252,8 @@ class ScheduleManager {
         if (
             syncId !== this.syncRequestId ||
             !this.currentUser ||
-            this.currentUser.id !== syncUserId
+            this.currentUser.id !== syncUserId ||
+            syncOwnerRequestId !== this.ownerRequestId
         ) {
             console.debug('Ignoring stale remote sync.');
             return;
@@ -6044,86 +6441,33 @@ class ScheduleManager {
             );
         }
 
-        const shell = document.getElementById('appShell');
-
-        if (shell) {
-            shell.classList.toggle('owner-mode', this.isOwner);
-            shell.classList.toggle(
-                'owner-user-mode',
-                this.isOwner && !!this.ownerViewingUserId
-            );
-        }
+        window.ScheduleStudioOwnerNavigation.setWorkspaceModes({
+            ownerMode: this.isOwner,
+            ownerUserMode: this.isOwner && !!this.ownerViewingUserId
+        });
 
         if (this.isOwner) {
-            document.querySelectorAll('.toggle-btn').forEach(btn =>
-                btn.classList.remove('active')
-            );
-
-            document.querySelectorAll('.view-content').forEach(panel =>
-                panel.classList.remove('active')
-            );
-
-            if (this.ownerViewingUserId) {
-                document.getElementById('teacherView')?.classList.add('active');
-            } else {
-                document.getElementById('ownerView')?.classList.add('active');
-            }
+            window.ScheduleStudioOwnerNavigation.showInitialOwnerView({
+                isViewingUser: !!this.ownerViewingUserId
+            });
         } else {
             this.resetToMemberStartView();
         }
 
-        if (this.isOwner && !this.ownerViewingUserId) {
-            const rememberedUser =
-                this.pendingOwnerViewingUserId &&
-                this.ownerProfiles.some(
-                    profile =>
-                        profile.id === this.pendingOwnerViewingUserId &&
-                        !['owner', 'school_admin'].includes(
-                            String(profile.role || '').toLowerCase()
-                        )
-                )
-                    ? this.pendingOwnerViewingUserId
-                    : null;
+        if (restoredRememberedUserId) {
+            await this.loadOwnerCatalog(restoredRememberedUserId);
 
-            if (rememberedUser) {
-                this.pendingOwnerViewingUserId = null;
-
-                this.ownerViewingUserId = rememberedUser;
-                this.ownerSelectedUserId = rememberedUser;
-
-                sessionStorage.setItem(
-                    'scheduleStudioOwnerUser',
-                    rememberedUser
-                );
-
-                this.schedules = this.ownerAllSchedules.filter(
-                    schedule => schedule.ownerId === rememberedUser
-                );
-
-                await this.loadOwnerCatalog(rememberedUser);
-
-                if (
-                    syncId !== this.syncRequestId ||
-                    !this.currentUser ||
-                    this.currentUser.id !== syncUserId
-                ) {
-                    return;
-                }
-
-                shell?.classList.remove('owner-mode');
-                shell?.classList.add('owner-user-mode');
-
-                document.getElementById('ownerView')?.classList.remove('active');
-                document.getElementById('teacherView')?.classList.add('active');
-
-                document
-                    .querySelectorAll('.toggle-btn')
-                    .forEach(btn => btn.classList.remove('active'));
-
-                document
-                    .querySelector('.toggle-btn[data-view="teacher"]')
-                    ?.classList.add('active');
+            if (
+                syncId !== this.syncRequestId ||
+                !this.currentUser ||
+                this.currentUser.id !== syncUserId ||
+                syncOwnerRequestId !== this.ownerRequestId ||
+                this.ownerViewingUserId !== restoredRememberedUserId
+            ) {
+                return;
             }
+
+            window.ScheduleStudioOwnerNavigation.showSelectedUserWorkspace();
         }
         this.ensureUniqueSubjectColors();
 
