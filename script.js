@@ -54,6 +54,7 @@ class ScheduleManager {
         };
 
         this.itemsPerPage = 3;
+        this.directoryCardsPerPage = 6;
         this.teacherSchedulesPerPage = 10;
         this.pendingOwnerViewingUserId = sessionStorage.getItem('scheduleStudioOwnerUser') || null;
         this.buildings = Array.from(new Set([...this.buildings, ...Object.values(this.roomDetails).map(info => info && info.building).filter(Boolean)]));
@@ -1457,10 +1458,16 @@ class ScheduleManager {
 
     // ==================== PAGINATION ====================
 
+    getPageSize(pageKey) {
+        return ['all', 'students', 'rooms'].includes(pageKey)
+            ? this.directoryCardsPerPage
+            : pageKey === 'teacher'
+                ? this.teacherSchedulesPerPage
+                : this.itemsPerPage;
+    }
+
     getPaginatedItems(items, pageKey) {
-        const pageSize = pageKey === 'teacher'
-            ? this.teacherSchedulesPerPage
-            : this.itemsPerPage;
+        const pageSize = this.getPageSize(pageKey);
         const totalPages = Math.max(1, Math.ceil(items.length / pageSize));
 
         // Keep the current page valid if items were deleted or filtered.
@@ -1497,10 +1504,8 @@ class ScheduleManager {
     }
 
     renderPagination(pageKey, totalItems) {
-        const pageSize = pageKey === 'teacher'
-            ? this.teacherSchedulesPerPage
-            : this.itemsPerPage;
-        if (totalItems <= pageSize) return '';
+        const pageSize = this.getPageSize(pageKey);
+        if (totalItems <= pageSize && !['all', 'students', 'rooms'].includes(pageKey)) return '';
 
         const totalPages = Math.ceil(totalItems / pageSize);
         const currentPage = Math.min(

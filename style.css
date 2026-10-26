@@ -4197,7 +4197,7 @@ body {
 
 #appShell #allSchedules {
     display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(min(100%, 310px), 1fr));
+    grid-template-columns: repeat(3, minmax(0, 1fr));
     align-items: stretch;
     gap: 14px;
 }
@@ -4350,7 +4350,7 @@ body {
 
 #appShell #studentSectionList {
     display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(min(100%, 310px), 1fr));
+    grid-template-columns: repeat(3, minmax(0, 1fr));
     align-items: stretch;
     gap: 14px;
 }
@@ -4424,7 +4424,7 @@ body {
 
 #appShell #roomAssignmentList {
     display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(min(100%, 310px), 1fr));
+    grid-template-columns: repeat(3, minmax(0, 1fr));
     align-items: stretch;
     gap: 14px;
 }
@@ -4494,6 +4494,22 @@ body {
 }
 
 @media (max-width: 600px) {
+    #appShell #roomAssignmentList {
+        grid-template-columns: minmax(0, 1fr);
+    }
+}
+
+@media (max-width: 900px) {
+    #appShell #allSchedules,
+    #appShell #studentSectionList,
+    #appShell #roomAssignmentList {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+}
+
+@media (max-width: 600px) {
+    #appShell #allSchedules,
+    #appShell #studentSectionList,
     #appShell #roomAssignmentList {
         grid-template-columns: minmax(0, 1fr);
     }
