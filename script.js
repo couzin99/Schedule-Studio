@@ -2550,6 +2550,41 @@ class ScheduleManager {
         mainContent?.classList.remove('all-view-active', 'manage-view-active');
     }
 
+    renderOwnerSelectedUserContext() {
+        const context = document.getElementById('ownerSelectedUserContext');
+        const name = document.getElementById('ownerSelectedUserName');
+        const email = document.getElementById('ownerSelectedUserEmail');
+        const profile = this.isOwner && this.ownerViewingUserId
+            ? this.ownerProfiles.find(
+                item => item.id === this.ownerViewingUserId
+            )
+            : null;
+
+        if (!context || !name || !email) return;
+
+        if (!profile) {
+            name.textContent = '';
+            email.textContent = '';
+            email.classList.add('hidden');
+            context.classList.add('hidden');
+            return;
+        }
+
+        const fullName = String(profile.full_name || '').trim();
+        const profileEmail = String(profile.email || '').trim();
+        name.textContent = fullName || profileEmail || 'Unnamed user';
+
+        if (profileEmail) {
+            email.textContent = profileEmail;
+            email.classList.remove('hidden');
+        } else {
+            email.textContent = '';
+            email.classList.add('hidden');
+        }
+
+        context.classList.remove('hidden');
+    }
+
     renderOwnerView() {
         const view = document.getElementById('ownerView');
         if (!view) return;
@@ -2644,31 +2679,32 @@ class ScheduleManager {
         this.ownerSelectedUserId = id;
         this.ownerViewingUserId = id;
         sessionStorage.setItem('scheduleStudioOwnerUser', id);
-        // Clear immediately: a selected user's workspace must never briefly
-        // render records belonging to the previously selected user.
+        this.activeSchedulePeriod = null;
+        this.term = '';
+        this.schedulePeriods = [];
         this.schedules = [];
+        this.ownerAllSchedules = [];
 
         await this.loadOwnerCatalog(id);
         await this.loadSchedulePeriods(id);
         if (requestId !== this.ownerRequestId || this.ownerViewingUserId !== id) return;
-        this.restoreSessionActiveSchedulePeriod(id);
-        if (this.activeSchedulePeriod) {
-            await this.refreshSchedulesForActivePeriod();
-            if (requestId !== this.ownerRequestId || this.ownerViewingUserId !== id) return;
-        }
-        window.ScheduleStudioOwnerNavigation.showSelectedUserWorkspace({
-            showBackButton: true
-        });
-        this.render();
-        this.renderTeacherOptions(); this.renderSubjectOptions(); this.renderCourseOptions(); this.renderClassSectionOptions(); this.renderBuildingOptions(); this.renderRoomOptions();
+        this.clearScheduleForm();
+        this.showWorkspaceScreen(true);
+        this.renderWorkspacePeriods();
     }
 
     exitOwnerUserView() {
         if (!this.isOwner) return;
         this.ownerRequestId++;
+        this.periodRequestId++;
         this.schedules = [];
+        this.ownerAllSchedules = [];
+        this.schedulePeriods = [];
+        this.activeSchedulePeriod = null;
+        this.term = '';
         this.ownerViewingUserId = null;
         this.ownerSelectedUserId = null;
+        this.renderOwnerSelectedUserContext();
         this.loadOwnerCatalog(this.currentUser?.id);
         sessionStorage.removeItem('scheduleStudioOwnerUser');
         window.ScheduleStudioOwnerNavigation.showOwnerDirectory({
@@ -3341,8 +3377,8 @@ class ScheduleManager {
 
             const timeStr = uniqueTimes.join('<br>');
             const days = orderedMeetings.map(item => item.day).filter((day, index, values) => values.indexOf(day) === index).join(', ');
-            const buildings = orderedMeetings.map(item => item.building || '').filter((value, index, values) => value && values.indexOf(value) === index).join('<br>');
-            const rooms = orderedMeetings.map(item => item.room || '').filter((value, index, values) => value && values.indexOf(value) === index).join('<br>');
+            const buildings = orderedMeetings.map(item => item.building || '').filter((value, index, values) => value && values.indexOf(value) === index).join('\n');
+            const rooms = orderedMeetings.map(item => item.room || '').filter((value, index, values) => value && values.indexOf(value) === index).join('\n');
             const courseCode = schedule.combinedClassId
                 ? meetings
                     .filter(item => String(item.courseCode || '').trim())
@@ -3744,6 +3780,19 @@ class ScheduleManager {
 
     getCurriculumEntryRequiredWeeklyMinutes(entry) {
         if (!entry) return 0;
+        const subjectName = String(entry.name || '').trim().toLowerCase();
+        const program = this.normalizeProgram(entry.program).toUpperCase();
+        const term = String(entry.term || '').trim().toLowerCase();
+        const isReviewSubject = /(?:^|\s)review [12]$/.test(subjectName);
+        const isEngineeringFourthYearReview =
+            ['BSCE', 'BSEE', 'BSME'].includes(program) &&
+            Number(entry.year) === 4 &&
+            ['1st semester', '2nd semester'].includes(term);
+
+        if (isReviewSubject && isEngineeringFourthYearReview) {
+            return 6 * 60;
+        }
+
         const lecHours = Number(entry.lecHours) || 0;
         const labHours = Number(entry.labHours) || 0;
         // Lecture: 1 curriculum hour = 1 actual scheduled hour.
@@ -5758,6 +5807,13 @@ class ScheduleManager {
                     this.setActiveSchedulePeriod(period);
                     this.schoolYear = period.school_year;
 
+                    if (this.isOwner && this.ownerViewingUserId) {
+                        window.ScheduleStudioOwnerNavigation.showSelectedUserWorkspace({
+                            showBackButton: true
+                        });
+                        this.renderOwnerSelectedUserContext();
+                    }
+
                     localStorage.setItem(
                         this.storageKey('schoolYear'),
                         period.school_year
@@ -5901,6 +5957,13 @@ class ScheduleManager {
                 'aria-hidden',
                 'true'
             );
+        }
+
+        if (this.isOwner && this.ownerViewingUserId) {
+            window.ScheduleStudioOwnerNavigation.showSelectedUserWorkspace({
+                showBackButton: true
+            });
+            this.renderOwnerSelectedUserContext();
         }
 
         this.showScheduleStudio();
@@ -6136,6 +6199,7 @@ class ScheduleManager {
         this.isOwner = ['owner', 'school_admin'].includes(
             String(ownProfile?.role || '').toLowerCase()
         );
+        this.renderOwnerSelectedUserContext();
 
         if (
             this.isOwner &&
@@ -6194,7 +6258,11 @@ class ScheduleManager {
                 return;
             }
 
-            this.restoreSessionActiveSchedulePeriod(activePeriodOwnerId);
+            if (!this.isOwner) {
+                this.restoreSessionActiveSchedulePeriod(activePeriodOwnerId);
+            } else {
+                this.activeSchedulePeriod = null;
+            }
             console.log(
             'RESTORED ACTIVE PERIOD:',
             this.activeSchedulePeriod
@@ -6471,8 +6539,7 @@ class ScheduleManager {
             ) {
                 return;
             }
-
-            window.ScheduleStudioOwnerNavigation.showSelectedUserWorkspace();
+            this.renderOwnerSelectedUserContext();
         }
         this.ensureUniqueSubjectColors();
 
@@ -6494,6 +6561,9 @@ class ScheduleManager {
             } else {
                 this.showWorkspaceScreen(true);
             }
+        } else if (restoredRememberedUserId) {
+            this.renderWorkspacePeriods();
+            this.showWorkspaceScreen(true);
         } else {
             this.showScheduleStudio();
         }

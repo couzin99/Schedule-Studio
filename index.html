@@ -168,6 +168,14 @@
                     id="activeSchedulePeriodHeader"
                     class="active-schedule-period-header hidden">
                 </div>
+                <div
+                    id="ownerSelectedUserContext"
+                    class="owner-selected-user-context hidden"
+                    aria-live="polite">
+                    <p class="owner-selected-user-label">OWNER VIEWING</p>
+                    <p id="ownerSelectedUserName" class="owner-selected-user-name"></p>
+                    <p id="ownerSelectedUserEmail" class="owner-selected-user-email hidden"></p>
+                </div>
                 <div id="remoteControls" class="remote-controls">
                     <button
                         id="ownerBackToUsers"
@@ -184,6 +192,7 @@
                 </div>
             </section>
             <div class="sidebar-account">
+                <p class="sidebar-account-label">SIGNED-IN ACCOUNT</p>
                 <div id="userIdentity" class="remote-status hidden"></div>
                 <button
                     id="signOutBtn"

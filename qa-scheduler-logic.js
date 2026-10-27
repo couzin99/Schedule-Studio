@@ -98,6 +98,107 @@ if (manager.getSectionSubjectScheduledMinutes('BSEE - 1A', 'MATHEMATICS') !== 60
 if (manager.getSectionSubjectScheduledMinutes('BSME - 1A', 'MATHEMATICS') !== 0) throw new Error('Weekly minutes leaked between sections.');
 if (manager.getCurriculumEntryRequiredWeeklyMinutes({ lecHours: 3, labHours: 0 }) !== 180) throw new Error('Lecture weekly-hour conversion failed.');
 if (manager.getCurriculumEntryRequiredWeeklyMinutes({ lecHours: 0, labHours: 1 }) !== 180) throw new Error('Laboratory weekly-hour conversion failed.');
+const reviewEntries = global.window.CURRICULUM_CATALOG.filter(entry =>
+    /(?:^|\s)review [12]$/i.test(String(entry.name || '').trim()) &&
+    ['BSCE', 'BSEE', 'BSME'].includes(entry.program) &&
+    Number(entry.year) === 4 &&
+    ['1st semester', '2nd semester'].includes(entry.term)
+);
+if (reviewEntries.length !== 6) throw new Error('Expected all six fourth-year engineering Review 1/2 curriculum entries.');
+for (const entry of reviewEntries) {
+    if (
+        manager.getCurriculumEntryRequiredWeeklyMinutes(entry) !== 360 ||
+        entry.units !== 3 ||
+        entry.lecHours !== 3 ||
+        entry.labHours !== 0
+    ) {
+        throw new Error(`${entry.name} should have six scheduling hours while retaining three curriculum units/hours.`);
+    }
+}
+const standardThreeHourEntry = {
+    name: 'STANDARD THREE-HOUR SUBJECT',
+    program: 'BSCE',
+    year: 4,
+    term: '1st semester',
+    units: 3,
+    lecHours: 3,
+    labHours: 0,
+    delivery: 'lec'
+};
+if (
+    manager.getCurriculumEntryRequiredWeeklyMinutes(standardThreeHourEntry) !== 180 ||
+    manager.getCurriculumEntryRequiredWeeklyMinutes({
+        ...standardThreeHourEntry,
+        name: 'CE Review 1',
+        year: 3
+    }) !== 180 ||
+    manager.getCurriculumEntryRequiredWeeklyMinutes({
+        ...standardThreeHourEntry,
+        name: 'CE Review 2',
+        term: 'summer'
+    }) !== 180 ||
+    manager.getCurriculumEntryRequiredWeeklyMinutes({
+        ...standardThreeHourEntry,
+        name: 'CE Review 3'
+    }) !== 180
+) {
+    throw new Error('The Review capacity exception affected an ineligible or normal subject.');
+}
+const reviewEntry = reviewEntries.find(entry =>
+    entry.program === 'BSCE' && entry.name === 'CE Review 1'
+);
+const reviewManager = Object.create(globalThis.ScheduleManagerForQa.prototype);
+reviewManager.activeSchedulePeriod = { id: 'period-1', term: '1st semester' };
+reviewManager.curriculumCatalog = [reviewEntry];
+reviewManager.selectedClassSections = ['BSCE - 4A'];
+reviewManager.schedules = [
+    row({
+        subject: reviewEntry.name,
+        courseCode: reviewEntry.code,
+        program: reviewEntry.program,
+        courseYear: 'BSCE - 4A',
+        units: reviewEntry.units,
+        lecHours: reviewEntry.lecHours,
+        labHours: reviewEntry.labHours,
+        delivery: reviewEntry.delivery,
+        startTime: '08:00',
+        endTime: '11:00'
+    })
+];
+if (
+    reviewManager.isSubjectFullyScheduledForSelectedSections(reviewEntry) ||
+    !reviewManager.getSelectedSubjectRemainingHours(reviewEntry).join('; ').includes('3h remaining')
+) {
+    throw new Error('A three-hour Review schedule should leave three of its six scheduling hours available.');
+}
+reviewManager.schedules.push(
+    row({
+        id: 'review-second-meeting',
+        subject: reviewEntry.name,
+        courseCode: reviewEntry.code,
+        program: reviewEntry.program,
+        courseYear: 'BSCE - 4A',
+        units: reviewEntry.units,
+        lecHours: reviewEntry.lecHours,
+        labHours: reviewEntry.labHours,
+        delivery: reviewEntry.delivery,
+        startTime: '11:00',
+        endTime: '14:00'
+    })
+);
+if (!reviewManager.isSubjectFullyScheduledForSelectedSections(reviewEntry)) {
+    throw new Error('Review should be fully scheduled after six actual weekly hours.');
+}
+const reviewLoad = reviewManager.generateTeacherLoadElement('TEACHER A', '1st semester').innerHTML;
+if (
+    (reviewLoad.match(/>3<\/td>/g) || []).length < 2 ||
+    !reviewLoad.includes('CE REV 1') ||
+    !reviewLoad.includes('8:00 AM') ||
+    !reviewLoad.includes('11:00 AM') ||
+    !reviewLoad.includes('2:00 PM')
+) {
+    throw new Error('Review teacher load should retain three credited hours while showing both actual meeting times.');
+}
 
 manager.selectedClassSections = ['BSEE - 1A', 'BSME - 1A'];
 manager.curriculumCatalog = [
@@ -199,6 +300,37 @@ const load = manager.generateTeacherLoadElement('TEACHER A', '1st semester').inn
 if (!load.includes('BSEE - 1A + BSME - 1A + BSME - 1B')) throw new Error('Teacher load did not combine sections for display.');
 if (!load.includes('Regular Teaching Load</strong> &nbsp;&nbsp;: 3')) throw new Error('Teacher load multiplied a combined class.');
 if (!load.includes('GE AA') || load.includes('GE AA / GEAA')) throw new Error('Teacher load did not choose one representative combined-class course code.');
+const schedulesBeforeRoomPdfTest = manager.schedules;
+manager.schedules = [
+    row({
+        courseCode: 'ROOM TEST 101',
+        subject: 'ROOM TEST',
+        building: 'BUILDING A',
+        room: '205',
+        startTime: '08:00',
+        endTime: '09:00'
+    }),
+    row({
+        id: 'room-test-second-meeting',
+        courseCode: 'ROOM TEST 101',
+        subject: 'ROOM TEST',
+        building: 'BUILDING B',
+        room: '204',
+        startTime: '09:00',
+        endTime: '10:00'
+    })
+];
+const multilineRoomLoad =
+    manager.generateTeacherLoadElement('TEACHER A', '1st semester').innerHTML;
+if (
+    !multilineRoomLoad.includes('205<br>204') ||
+    !multilineRoomLoad.includes('BUILDING A<br>BUILDING B') ||
+    multilineRoomLoad.includes('205&lt;br&gt;204') ||
+    multilineRoomLoad.includes('BUILDING A&lt;br&gt;BUILDING B')
+) {
+    throw new Error('Teacher load PDF did not render multiple room/building values as separate lines.');
+}
+manager.schedules = schedulesBeforeRoomPdfTest;
 const firstMeetingRows = [...manager.schedules];
 const secondMeetingRows = firstMeetingRows.map((schedule, index) => ({
     ...schedule,

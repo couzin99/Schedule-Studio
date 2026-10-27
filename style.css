@@ -2026,6 +2026,43 @@ body, .container { background-color:#f5f6f8; }
     white-space: normal;
 }
 
+#appShell .owner-selected-user-context {
+    margin-top: 12px;
+    padding: 10px;
+    border: 1px solid #f0dfd2;
+    border-left: 3px solid #d9815b;
+    border-radius: 9px;
+    background: #fff8f3;
+}
+
+#appShell .owner-selected-user-context p {
+    margin: 0;
+}
+
+#appShell .owner-selected-user-label {
+    margin-bottom: 4px !important;
+    color: #9e5b40;
+    font-size: .62rem;
+    font-weight: 800;
+    letter-spacing: .09em;
+}
+
+#appShell .owner-selected-user-name {
+    color: #35312f;
+    font-size: .83rem;
+    font-weight: 750;
+    line-height: 1.35;
+    overflow-wrap: anywhere;
+}
+
+#appShell .owner-selected-user-email {
+    margin-top: 3px !important;
+    color: #7b706a;
+    font-size: .69rem;
+    line-height: 1.35;
+    overflow-wrap: anywhere;
+}
+
 #appShell .sidebar-period .remote-controls {
     display: grid;
     justify-content: stretch;
@@ -2055,6 +2092,20 @@ body, .container { background-color:#f5f6f8; }
 
 #appShell .sidebar-account {
     margin-top: auto;
+}
+
+#appShell .sidebar-account-label {
+    display: none;
+    margin: 0 0 6px;
+    color: #8c817b;
+    font-size: .61rem;
+    font-weight: 800;
+    letter-spacing: .09em;
+}
+
+#appShell.owner-mode .sidebar-account-label,
+#appShell.owner-user-mode .sidebar-account-label {
+    display: block;
 }
 
 #appShell > .dashboard {
@@ -4706,4 +4757,21 @@ body {
     #schedulePeriodModal .schedule-form-actions .btn-add {
         width: 100%;
     }
+}
+
+#appShell.owner-mode:not(.owner-user-mode) {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: auto minmax(0, 1fr);
+    grid-template-areas:
+        "dashboard"
+        "content";
+}
+
+#appShell.owner-mode:not(.owner-user-mode) > .app-sidebar {
+    display: none;
+}
+
+#appShell.owner-mode:not(.owner-user-mode) > .dashboard,
+#appShell.owner-mode:not(.owner-user-mode) > .main-content {
+    grid-column: 1;
 }
