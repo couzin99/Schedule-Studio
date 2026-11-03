@@ -286,7 +286,23 @@ manager.schedules = [
     row({ subject: 'STATICS', courseCode: 'ME 101' })
 ];
 if (manager.getTeacherDistinctSubjects('TEACHER A').length !== 6) throw new Error('Combined class was counted as multiple teacher subjects.');
-if (manager.canTeacherTakeSubject('TEACHER A', 'SEVENTH SUBJECT', 'BSEE').allowed) throw new Error('Teacher seven-subject limit was not enforced.');
+const teacherSubjectRows = count =>
+    Array.from({ length: count }, (_, index) =>
+        row({ subject: `TEST SUBJECT ${index + 1}` })
+    );
+manager.schedules = teacherSubjectRows(5);
+const sixthSubject = manager.canTeacherTakeSubject('TEACHER A', 'TEST SUBJECT 6', 'BSEE');
+if (!sixthSubject.allowed || sixthSubject.subjectCount !== 6) throw new Error('Teacher six-subject boundary was not allowed.');
+manager.schedules = teacherSubjectRows(6);
+if (manager.getTeacherDistinctSubjects('TEACHER A').length !== 6) throw new Error('Distinct-subject counting changed at six subjects.');
+const seventhSubject = manager.canTeacherTakeSubject('TEACHER A', 'TEST SUBJECT 7', 'BSEE');
+if (!seventhSubject.allowed || seventhSubject.subjectCount !== 7) throw new Error('Teacher seven-subject boundary was not allowed.');
+manager.schedules = teacherSubjectRows(24);
+const twentyFifthSubject = manager.canTeacherTakeSubject('TEACHER A', 'TEST SUBJECT 25', 'BSEE');
+if (!twentyFifthSubject.allowed || twentyFifthSubject.subjectCount !== 25) throw new Error('Teacher twenty-five-subject boundary was not allowed.');
+manager.schedules = teacherSubjectRows(25);
+if (manager.getTeacherDistinctSubjects('TEACHER A').length !== 25) throw new Error('Distinct-subject counting changed at twenty-five subjects.');
+if (manager.canTeacherTakeSubject('TEACHER A', 'TEST SUBJECT 26', 'BSEE').allowed) throw new Error('Teacher twenty-six-subject limit was not enforced.');
 if (manager.getSubjectEquivalencyKey('ETHICS', 'BSEE') !== manager.getSubjectEquivalencyKey('ETHICS', 'BSME')) throw new Error('Common-subject equivalency regressed.');
 
 manager.schedules = [

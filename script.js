@@ -596,7 +596,7 @@ class ScheduleManager {
         * A combined class is one teaching assignment even when
         * it contains multiple programs/sections.
         *
-        * Therefore, check the teacher's 6-subject limit using
+        * Therefore, check the teacher's 25-subject limit using
         * the subject itself rather than counting every selected
         * section as another subject.
         */
@@ -618,10 +618,10 @@ class ScheduleManager {
 
         if (
             !subjectAlreadyAssigned &&
-            existingSubjectKeys.length >= 6
+            existingSubjectKeys.length >= 25
         ) {
             return this.showNotification(
-                `${teacherName} already has 6 subjects in this scheduling period.`,
+                `${teacherName} already has 25 subjects in this scheduling period.`,
                 'error'
             );
         }
@@ -3981,7 +3981,7 @@ class ScheduleManager {
         }
 
         // A new distinct subject would be added.
-        if (existingSubjectKeys.length >= 6) {
+        if (existingSubjectKeys.length >= 25) {
             return {
                 allowed: false,
                 isNewSubject: true,
