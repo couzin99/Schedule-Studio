@@ -3329,6 +3329,49 @@ class ScheduleManager {
             : units;
     };
 
+    const isEligibleReviewSchedule = (schedule) => {
+        const subjectName = String(schedule.subject || '')
+            .trim()
+            .toLowerCase();
+        const courseYear = this.parseCourseYear(schedule.courseYear);
+        const program = this.normalizeProgram(
+            schedule.program || courseYear?.program
+        ).toUpperCase();
+        const year = Number(schedule.year ?? courseYear?.year);
+        const term = String(schedule.term || '').trim().toLowerCase();
+
+        return /(?:^|\s)review [12]$/.test(subjectName) &&
+            ['BSCE', 'BSEE', 'BSME'].includes(program) &&
+            year === 4 &&
+            ['1st semester', '2nd semester'].includes(term);
+    };
+
+    const getUniqueScheduledMinutes = (meetings) => {
+        const seenMeetings = new Set();
+
+        return meetings.reduce((total, meeting) => {
+            const meetingKey = JSON.stringify([
+                String(meeting.day || '').trim().toLowerCase(),
+                this.timeToMinutes(meeting.startTime),
+                this.timeToMinutes(meeting.endTime)
+            ]);
+
+            if (seenMeetings.has(meetingKey)) return total;
+            seenMeetings.add(meetingKey);
+
+            return total + getMeetingMinutes(meeting);
+        }, 0);
+    };
+
+    const getLoadTeachingHours = ({ schedule, meetings }) => {
+        const eligibleReviewMeetings =
+            meetings.filter(isEligibleReviewSchedule);
+
+        return eligibleReviewMeetings.length
+            ? getUniqueScheduledMinutes(eligibleReviewMeetings) / 60
+            : getTeachingHours(schedule);
+    };
+
         const dayOrder = { Monday: 1, Tuesday: 2, Wednesday: 3, Thursday: 4, Friday: 5, Saturday: 6 };
         
         const loadGroups = new Map();
@@ -3361,7 +3404,7 @@ class ScheduleManager {
         // Build one teaching-load row per subject/course-section, combining its weekly meetings.
         const rows = loadEntries.map(({ schedule, meetings, sections }) => {
             const units = getUnits(schedule);
-            const teachingHours = getTeachingHours(schedule);
+            const teachingHours = getLoadTeachingHours({ schedule, meetings });
             const orderedMeetings = meetings.slice().sort((a, b) => (dayOrder[a.day] || 0) - (dayOrder[b.day] || 0) || a.startTime.localeCompare(b.startTime));
             const uniqueTimes = [];
             const seenTimes = new Set();
@@ -3405,7 +3448,10 @@ class ScheduleManager {
 
         // Totals count each course-section once, regardless of how many weekly meetings it has.
         const totalUnits = loadEntries.reduce((sum, entry) => sum + getUnits(entry.schedule), 0);
-        const totalHours = loadEntries.reduce((sum, entry) => sum + getTeachingHours(entry.schedule), 0);
+        const totalHours = loadEntries.reduce(
+            (sum, entry) => sum + getLoadTeachingHours(entry),
+            0
+        );
         const regularLoad = Math.min(totalUnits, 24);
         const overloadUnits = Math.max(totalUnits - 24, 0);
 

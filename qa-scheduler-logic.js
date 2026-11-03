@@ -190,14 +190,191 @@ if (!reviewManager.isSubjectFullyScheduledForSelectedSections(reviewEntry)) {
     throw new Error('Review should be fully scheduled after six actual weekly hours.');
 }
 const reviewLoad = reviewManager.generateTeacherLoadElement('TEACHER A', '1st semester').innerHTML;
+const reviewLoadRow = reviewLoad
+    .split('</tr>')
+    .find(rowHtml => rowHtml.includes('CE REV 1'));
+const reviewLoadCells = reviewLoadRow?.match(/<td[^>]*>([\s\S]*?)<\/td>/g) || [];
+const reviewCredits = reviewLoadCells
+    .slice(3, 5)
+    .map(cell => cell.replace(/<[^>]*>/g, '').trim());
 if (
-    (reviewLoad.match(/>3<\/td>/g) || []).length < 2 ||
+    reviewCredits[0] !== '3' ||
+    reviewCredits[1] !== '6' ||
     !reviewLoad.includes('CE REV 1') ||
     !reviewLoad.includes('8:00 AM') ||
     !reviewLoad.includes('11:00 AM') ||
     !reviewLoad.includes('2:00 PM')
 ) {
-    throw new Error('Review teacher load should retain three credited hours while showing both actual meeting times.');
+    throw new Error('Review teacher load should retain three units, show six scheduled hours, and display both actual meeting times.');
+}
+
+const reviewSchedule = (overrides = {}) => row({
+    subject: reviewEntry.name,
+    courseCode: reviewEntry.code,
+    program: reviewEntry.program,
+    year: 4,
+    courseYear: 'BSCE - 4A',
+    units: reviewEntry.units,
+    lecHours: reviewEntry.lecHours,
+    labHours: reviewEntry.labHours,
+    delivery: reviewEntry.delivery,
+    ...overrides
+});
+const getLoadRowValues = (loadHtml, subjectName) => {
+    const loadRow = loadHtml
+        .split('</tr>')
+        .find(rowHtml =>
+            rowHtml.toLowerCase().includes(subjectName.toLowerCase())
+        );
+    const cells = loadRow?.match(/<td[^>]*>([\s\S]*?)<\/td>/g) || [];
+    return cells.map(cell => cell.replace(/<[^>]*>/g, '').trim());
+};
+const getTotalLoadValues = loadHtml => {
+    const totalRow = loadHtml
+        .split('</tr>')
+        .find(rowHtml => rowHtml.includes('<strong>TOTAL</strong>'));
+    const cells = totalRow?.match(/<td[^>]*>([\s\S]*?)<\/td>/g) || [];
+    return cells.map(cell => cell.replace(/<[^>]*>/g, '').trim());
+};
+const reviewHourCases = [
+    { hours: 4, startTime: '08:00', endTime: '10:00' },
+    { hours: 6, startTime: '08:00', endTime: '11:00' },
+    { hours: 8, startTime: '08:00', endTime: '12:00' }
+];
+for (const { hours, startTime, endTime } of reviewHourCases) {
+    reviewManager.schedules = [
+        reviewSchedule({ day: 'Monday', startTime, endTime }),
+        reviewSchedule({ day: 'Wednesday', startTime, endTime })
+    ];
+    const reviewLoadHtml = reviewManager.generateTeacherLoadElement(
+        'TEACHER A',
+        '1st semester'
+    ).innerHTML;
+    const loadValues = getLoadRowValues(
+        reviewLoadHtml,
+        'CE REV 1'
+    );
+    const totalLoadValues = getTotalLoadValues(reviewLoadHtml);
+    if (
+        loadValues[3] !== '3' ||
+        loadValues[4] !== String(hours) ||
+        totalLoadValues[2] !== String(hours) ||
+        !loadValues[6].includes(`${reviewManager.formatTime(startTime)} - ${reviewManager.formatTime(endTime)}`) ||
+        loadValues[7] !== 'Monday, Wednesday'
+    ) {
+        throw new Error(`A ${hours}-hour Review schedule should report three units and ${hours} actual hours across both meeting days.`);
+    }
+}
+
+reviewManager.schedules = [
+    row({
+        subject: 'STANDARD THREE-HOUR SUBJECT',
+        courseCode: 'STD 101',
+        program: 'BSCE',
+        year: 4,
+        courseYear: 'BSCE - 4A',
+        units: 3,
+        lecHours: 3,
+        labHours: 0,
+        delivery: 'lec',
+        day: 'Monday',
+        startTime: '08:00',
+        endTime: '10:00'
+    }),
+    row({
+        subject: 'STANDARD THREE-HOUR SUBJECT',
+        courseCode: 'STD 101',
+        program: 'BSCE',
+        year: 4,
+        courseYear: 'BSCE - 4A',
+        units: 3,
+        lecHours: 3,
+        labHours: 0,
+        delivery: 'lec',
+        day: 'Wednesday',
+        startTime: '08:00',
+        endTime: '10:00'
+    })
+];
+const standardLoadValues = getLoadRowValues(
+    reviewManager.generateTeacherLoadElement('TEACHER A', '1st semester').innerHTML,
+    'STANDARD THREE-HOUR SUBJECT'
+);
+if (standardLoadValues[3] !== '3' || standardLoadValues[4] !== '3') {
+    throw new Error('Non-Review teacher-load hours should retain the curriculum calculation.');
+}
+
+reviewManager.schedules = [
+    row({
+        subject: 'CE REVIEW 1',
+        courseCode: 'CE REV 1',
+        program: 'BSCE',
+        year: 3,
+        courseYear: 'BSCE - 3A',
+        units: 3,
+        lecHours: 3,
+        labHours: 0,
+        delivery: 'lec',
+        day: 'Monday',
+        startTime: '08:00',
+        endTime: '10:00'
+    }),
+    row({
+        subject: 'CE REVIEW 1',
+        courseCode: 'CE REV 1',
+        program: 'BSCE',
+        year: 3,
+        courseYear: 'BSCE - 3A',
+        units: 3,
+        lecHours: 3,
+        labHours: 0,
+        delivery: 'lec',
+        day: 'Wednesday',
+        startTime: '08:00',
+        endTime: '10:00'
+    })
+];
+const ineligibleReviewValues = getLoadRowValues(
+    reviewManager.generateTeacherLoadElement('TEACHER A', '1st semester').innerHTML,
+    'CE REV 1'
+);
+if (ineligibleReviewValues[3] !== '3' || ineligibleReviewValues[4] !== '3') {
+    throw new Error('Ineligible Review subjects should retain their existing teaching-load calculation.');
+}
+
+const combinedReviewId = 'combined-review-load';
+reviewManager.schedules = [
+    reviewSchedule({
+        combinedClassId: combinedReviewId,
+        day: 'Monday',
+        startTime: '08:00',
+        endTime: '12:00'
+    }),
+    reviewSchedule({
+        combinedClassId: combinedReviewId,
+        program: 'BSEE',
+        courseYear: 'BSEE - 4A',
+        day: 'Monday',
+        startTime: '08:00',
+        endTime: '12:00'
+    })
+];
+const combinedReviewLoad = reviewManager.generateTeacherLoadElement(
+    'TEACHER A',
+    '1st semester'
+).innerHTML;
+const combinedReviewRows = combinedReviewLoad
+    .split('</tr>')
+    .filter(rowHtml => rowHtml.includes('CE REV 1'));
+const combinedReviewValues = getLoadRowValues(combinedReviewLoad, 'CE REV 1');
+const combinedReviewTotals = getTotalLoadValues(combinedReviewLoad);
+if (
+    combinedReviewRows.length !== 1 ||
+    combinedReviewValues[3] !== '3' ||
+    combinedReviewValues[4] !== '4' ||
+    combinedReviewTotals[2] !== '4'
+) {
+    throw new Error('Combined Review schedule records should appear once and count their shared meeting once.');
 }
 
 manager.selectedClassSections = ['BSEE - 1A', 'BSME - 1A'];
