@@ -3761,6 +3761,28 @@ class ScheduleManager {
         const normalizedDelivery =
             String(entry.delivery || '').trim().toLowerCase();
 
+        if (normalizedCode) {
+            const exactCodeMatches = candidates.filter(candidate =>
+                String(candidate.code || candidate.courseCode || '')
+                    .trim()
+                    .toLowerCase() === normalizedCode &&
+                (!normalizedDelivery ||
+                    !String(candidate.delivery || '').trim() ||
+                    String(candidate.delivery || '').trim().toLowerCase() ===
+                        normalizedDelivery)
+            );
+
+            if (exactCodeMatches.length) {
+                const exactDeliveries = new Set(exactCodeMatches.map(candidate =>
+                    String(candidate.delivery || '').trim().toLowerCase()
+                ));
+
+                return exactDeliveries.size === 1
+                    ? exactCodeMatches[0]
+                    : null;
+            }
+        }
+
         const sameName = candidates.filter(candidate =>
             String(candidate.name || '').trim().toLowerCase() === normalizedName
         );
@@ -4261,10 +4283,22 @@ class ScheduleManager {
         const normalizedProgram = this.normalizeProgram(program);
         const activeTerm = String(this.term || '').trim().toLowerCase();
 
+        const componentCode =
+            String(component?.code || component?.courseCode || '')
+                .trim()
+                .toLowerCase();
         let entries = this.curriculumCatalog
             .filter(entry =>
-                String(entry.name || '').trim().toLowerCase() === normalizedSubject &&
-                this.normalizeProgram(entry.program) === normalizedProgram
+                this.normalizeProgram(entry.program) === normalizedProgram &&
+                (
+                    String(entry.name || '').trim().toLowerCase() === normalizedSubject ||
+                    (
+                        componentCode &&
+                        String(entry.code || entry.courseCode || '')
+                            .trim()
+                            .toLowerCase() === componentCode
+                    )
+                )
             );
 
         if (component) {
@@ -4525,35 +4559,25 @@ class ScheduleManager {
 
                 if (!candidate) return null;
 
-                const entriesForAllSections =
-                    sectionPrograms.map(section =>
-                        this.curriculumCatalog.filter(entry =>
+                const matchingEntries =
+                    sectionPrograms.map(section => {
+                        const entries = this.curriculumCatalog.filter(entry =>
                             (
                                 !activeTerm ||
                                 String(entry.term || '')
                                     .trim()
                                     .toLowerCase() === activeTerm
                             ) &&
-                            String(entry.name || '').trim().toLowerCase() ===
-                                String(candidate.name || '').trim().toLowerCase() &&
                             this.normalizeProgram(entry.program) ===
                                 section.program &&
                             String(entry.year) === section.year
-                        )
-                    );
+                        );
 
-                const existsForEverySection =
-                    entriesForAllSections.every(
-                        entries => entries.length > 0
-                    );
-
-                if (!existsForEverySection) {
-                    return null;
-                }
-
-                const matchingEntries = entriesForAllSections.map(entries =>
-                    this.getCurriculumEntryForComponent(candidate, entries)
-                );
+                        return this.getCurriculumEntryForComponent(
+                            candidate,
+                            entries
+                        );
+                    });
 
                 if (matchingEntries.some(entry => !entry)) {
                     return null;

@@ -875,6 +875,100 @@ async function verifyCurriculumComponentOptions() {
         throw new Error('Selection accepted a component missing from one selected program.');
     }
 
+    const pathfitEntries = global.window.CURRICULUM_CATALOG.filter(entry =>
+        ['BSEE', 'BSME'].includes(entry.program) &&
+        Number(entry.year) === 2 &&
+        entry.term === '2nd semester' &&
+        entry.code === 'PATHFIT 4'
+    );
+    const bseePathfit = pathfitEntries.find(entry => entry.program === 'BSEE');
+    const bsmePathfit = pathfitEntries.find(entry => entry.program === 'BSME');
+    if (!bseePathfit || !bsmePathfit) {
+        throw new Error('Curriculum catalog is missing the BSEE/BSME PATHFIT 4 records.');
+    }
+
+    componentManager.term = '2nd semester';
+    componentManager.activeSchedulePeriod.term = '2nd semester';
+    componentManager.selectedClassSections = ['BSEE - 2A', 'BSME - 2A'];
+    componentManager.curriculumCatalog = [
+        { ...bseePathfit, id: 'bsee-pathfit-record' },
+        { ...bsmePathfit, id: 'bsme-pathfit-record' }
+    ];
+    componentManager.schedules = [];
+    componentManager.selectedCurriculumOptionKey = null;
+    subjectInput.value = '';
+    global.document.getElementById = id =>
+        id === 'subjectSelect' ? subjectInput :
+        id === 'subjectOptions' ? subjectList :
+        null;
+
+    const combinedPathfitOptions =
+        componentManager.getSubjectsForSelectedClassSections();
+    if (
+        !combinedPathfitOptions.some(entry =>
+            entry.code === 'PATHFIT 4' && entry.delivery === 'lec'
+        )
+    ) {
+        throw new Error('Combined BSEE/BSME sections omitted shared PATHFIT 4 with different record IDs/names.');
+    }
+    componentManager.renderSubjectOptions('PATHFIT 4');
+    if (
+        !subjectList.innerHTML.includes('PATHFIT 4') ||
+        !subjectList.innerHTML.includes('Physical Activites Toward Health and Fitness')
+    ) {
+        throw new Error('Subject dropdown did not render shared PATHFIT 4.');
+    }
+
+    subjectInput.value = bseePathfit.name;
+    componentManager.selectedCurriculumOptionKey =
+        componentManager.getCurriculumOptionKey(
+            componentManager.curriculumCatalog[0]
+        );
+    if (!componentManager.getSelectedCurriculumEntry()) {
+        throw new Error('Shared PATHFIT 4 did not resolve for both selected sections.');
+    }
+
+    componentManager.selectedClassSections = ['BSEE - 2A'];
+    componentManager.curriculumCatalog = [
+        { ...bseePathfit, id: 'bsee-pathfit-record' }
+    ];
+    if (
+        !componentManager.getSubjectsForSelectedClassSections().some(entry =>
+            entry.code === 'PATHFIT 4'
+        )
+    ) {
+        throw new Error('Single-section PATHFIT 4 filtering changed.');
+    }
+
+    componentManager.selectedClassSections = ['BSEE - 2A', 'BSME - 2A'];
+    if (
+        componentManager.getSubjectsForSelectedClassSections().some(entry =>
+            entry.code === 'PATHFIT 4'
+        )
+    ) {
+        throw new Error('Combined sections offered PATHFIT 4 when only BSEE contains it.');
+    }
+
+    componentManager.curriculumCatalog = [
+        {
+            program: 'BSEE', year: 2, term: '2nd semester',
+            code: 'COMP-101', name: 'Different Component Subject',
+            delivery: 'lec'
+        },
+        {
+            program: 'BSME', year: 2, term: '2nd semester',
+            code: 'COMP-101', name: 'Different Component Subject',
+            delivery: 'lab'
+        }
+    ];
+    if (
+        componentManager.getSubjectsForSelectedClassSections().some(entry =>
+            entry.code === 'COMP-101'
+        )
+    ) {
+        throw new Error('Combined sections treated lecture and laboratory records as equivalent.');
+    }
+
     componentManager.term = '2nd semester';
     componentManager.activeSchedulePeriod.term = '2nd semester';
     componentManager.selectedClassSections = ['BSCE - 4A'];
