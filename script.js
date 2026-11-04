@@ -3322,6 +3322,18 @@ class ScheduleManager {
     };
 
     const getTeachingHours = (schedule) => {
+        const lectureHours = Number(schedule.lecHours);
+        const laboratoryUnits = Number(schedule.labHours);
+
+        if (
+            Number.isFinite(lectureHours) &&
+            lectureHours > 0 &&
+            Number.isFinite(laboratoryUnits) &&
+            laboratoryUnits > 0
+        ) {
+            return lectureHours + laboratoryUnits * 3;
+        }
+
         const units = getUnits(schedule);
 
         return isLaboratory(schedule)
@@ -3452,8 +3464,8 @@ class ScheduleManager {
             (sum, entry) => sum + getLoadTeachingHours(entry),
             0
         );
-        const regularLoad = Math.min(totalUnits, 24);
-        const overloadUnits = Math.max(totalUnits - 24, 0);
+        const regularLoad = Math.min(totalHours, 24);
+        const overloadHours = Math.max(totalHours - 24, 0);
 
         const table = `
             <div style="margin-top:10px; font-size:12px;">
@@ -3464,7 +3476,7 @@ class ScheduleManager {
                     </div>
                     <div style="width:320px; text-align:right;">
                         <div><strong>Regular Teaching Load</strong> &nbsp;&nbsp;: ${regularLoad}</div>
-                        <div style="margin-top:6px;"><strong>Overload</strong> &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;: ${overloadUnits}</div>
+                        <div style="margin-top:6px;"><strong>Overload</strong> &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;: ${overloadHours}</div>
                     </div>
                 </div>
 

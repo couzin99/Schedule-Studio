@@ -236,6 +236,12 @@ const getTotalLoadValues = loadHtml => {
     const cells = totalRow?.match(/<td[^>]*>([\s\S]*?)<\/td>/g) || [];
     return cells.map(cell => cell.replace(/<[^>]*>/g, '').trim());
 };
+const getLoadSummaryValues = loadHtml => {
+    const summary = loadHtml.match(
+        /<strong>Regular Teaching Load<\/strong>[^<]*: ([^<]+)<\/div>[\s\S]*?<strong>Overload<\/strong>[^<]*: ([^<]+)<\/div>/
+    );
+    return summary ? summary.slice(1).map(value => value.trim()) : [];
+};
 const reviewHourCases = [
     { hours: 4, startTime: '08:00', endTime: '10:00' },
     { hours: 6, startTime: '08:00', endTime: '11:00' },
@@ -258,6 +264,7 @@ for (const { hours, startTime, endTime } of reviewHourCases) {
     if (
         loadValues[3] !== '3' ||
         loadValues[4] !== String(hours) ||
+        totalLoadValues[1] !== '3' ||
         totalLoadValues[2] !== String(hours) ||
         !loadValues[6].includes(`${reviewManager.formatTime(startTime)} - ${reviewManager.formatTime(endTime)}`) ||
         loadValues[7] !== 'Monday, Wednesday'
@@ -302,6 +309,111 @@ const standardLoadValues = getLoadRowValues(
 );
 if (standardLoadValues[3] !== '3' || standardLoadValues[4] !== '3') {
     throw new Error('Non-Review teacher-load hours should retain the curriculum calculation.');
+}
+
+const teachingLoadSchedules = (courseCount, mixedCourseCount = 0) =>
+    Array.from({ length: courseCount }, (_, index) => {
+        const isMixed = index < mixedCourseCount;
+        return row({
+            subject: `LOAD TEST SUBJECT ${index + 1}`,
+            courseCode: `LOAD ${index + 1}`,
+            units: 3,
+            lecHours: isMixed ? 2 : 3,
+            labHours: isMixed ? 1 : 0,
+            delivery: isMixed ? 'lec/lab' : 'lec'
+        });
+    });
+
+const loadComponentCases = [
+    {
+        name: 'lecture-only',
+        schedule: { units: 3, lecHours: 3, labHours: 0, delivery: 'lec' },
+        expectedUnits: '3',
+        expectedHours: '3'
+    },
+    {
+        name: 'laboratory-only',
+        schedule: { units: 1, lecHours: 0, labHours: 1, delivery: 'lab' },
+        expectedUnits: '1',
+        expectedHours: '3'
+    },
+    {
+        name: 'mixed lecture/laboratory',
+        schedule: { units: 3, lecHours: 2, labHours: 1, delivery: 'lec/lab' },
+        expectedUnits: '3',
+        expectedHours: '5'
+    }
+];
+for (const testCase of loadComponentCases) {
+    reviewManager.schedules = [
+        row({
+            subject: `LOAD ${testCase.name.toUpperCase()}`,
+            courseCode: `LOAD ${testCase.name}`,
+            ...testCase.schedule
+        })
+    ];
+    const loadHtml = reviewManager.generateTeacherLoadElement(
+        'TEACHER A',
+        '1st semester'
+    ).innerHTML;
+    const rowValues = getLoadRowValues(loadHtml, `LOAD ${testCase.name}`);
+    const totalValues = getTotalLoadValues(loadHtml);
+    if (
+        rowValues[3] !== testCase.expectedUnits ||
+        rowValues[4] !== testCase.expectedHours ||
+        totalValues[1] !== testCase.expectedUnits ||
+        totalValues[2] !== testCase.expectedHours
+    ) {
+        throw new Error(
+            `${testCase.name} teaching load should report ${testCase.expectedUnits} units and ${testCase.expectedHours} teaching hours.`
+        );
+    }
+}
+
+const teachingLoadCases = [
+    {
+        name: 'below the regular-load limit',
+        schedules: teachingLoadSchedules(4),
+        expectedUnits: '12',
+        expectedHours: '12',
+        expectedRegular: '12',
+        expectedOverload: '0'
+    },
+    {
+        name: 'at the regular-load limit',
+        schedules: teachingLoadSchedules(8),
+        expectedUnits: '24',
+        expectedHours: '24',
+        expectedRegular: '24',
+        expectedOverload: '0'
+    },
+    {
+        name: 'above the regular-load limit',
+        schedules: teachingLoadSchedules(8, 2),
+        expectedUnits: '24',
+        expectedHours: '28',
+        expectedRegular: '24',
+        expectedOverload: '4'
+    }
+];
+for (const testCase of teachingLoadCases) {
+    reviewManager.schedules = testCase.schedules;
+    const loadHtml = reviewManager.generateTeacherLoadElement(
+        'TEACHER A',
+        '1st semester'
+    ).innerHTML;
+    const totalValues = getTotalLoadValues(loadHtml);
+    const summaryValues = getLoadSummaryValues(loadHtml);
+    if (
+        totalValues[1] !== testCase.expectedUnits ||
+        totalValues[2] !== testCase.expectedHours ||
+        summaryValues[0] !== testCase.expectedRegular ||
+        summaryValues[1] !== testCase.expectedOverload
+    ) {
+        throw new Error(
+            `${testCase.name} should report ${testCase.expectedUnits} units, ${testCase.expectedHours} teaching hours, ${testCase.expectedRegular} regular hours, and ${testCase.expectedOverload} overload hours.`
+        );
+    }
 }
 
 reviewManager.schedules = [
