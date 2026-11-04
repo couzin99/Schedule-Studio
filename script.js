@@ -3751,8 +3751,65 @@ class ScheduleManager {
         ]);
     }
 
+    areCurriculumEntriesEquivalentByKey(entry, candidate) {
+        const equivalencyKey = String(entry?.equivalencyKey || '')
+            .trim()
+            .toUpperCase();
+        const candidateEquivalencyKey =
+            String(candidate?.equivalencyKey || '')
+                .trim()
+                .toUpperCase();
+        const lecHours = Number(entry?.lecHours);
+        const candidateLecHours = Number(candidate?.lecHours);
+        const labHours = Number(entry?.labHours);
+        const candidateLabHours = Number(candidate?.labHours);
+
+        return Boolean(
+            equivalencyKey &&
+            equivalencyKey === candidateEquivalencyKey &&
+            String(entry.year ?? '').trim() &&
+            String(entry.year ?? '').trim() ===
+                String(candidate.year ?? '').trim() &&
+            String(entry.term || '').trim() &&
+            String(entry.term || '').trim().toLowerCase() ===
+                String(candidate.term || '').trim().toLowerCase() &&
+            String(entry.delivery || '').trim() &&
+            String(entry.delivery || '').trim().toLowerCase() ===
+                String(candidate.delivery || '').trim().toLowerCase() &&
+            Number.isFinite(lecHours) &&
+            Number.isFinite(candidateLecHours) &&
+            lecHours === candidateLecHours &&
+            Number.isFinite(labHours) &&
+            Number.isFinite(candidateLabHours) &&
+            labHours === candidateLabHours
+        );
+    }
+
     getCurriculumEntryForComponent(entry, candidates) {
         if (!entry || !Array.isArray(candidates)) return null;
+
+        const equivalencyKey = String(entry.equivalencyKey || '')
+            .trim()
+            .toUpperCase();
+        if (equivalencyKey) {
+            const equivalencyMatches = candidates.filter(candidate =>
+                String(candidate.equivalencyKey || '')
+                    .trim()
+                    .toUpperCase() === equivalencyKey
+            );
+
+            if (equivalencyMatches.length) {
+                return equivalencyMatches.length === 1 &&
+                    this.areCurriculumEntriesEquivalentByKey(
+                        entry,
+                        equivalencyMatches[0]
+                    )
+                    ? equivalencyMatches[0]
+                    : null;
+            }
+
+            return null;
+        }
 
         const normalizedName =
             String(entry.name || '').trim().toLowerCase();
@@ -4282,6 +4339,31 @@ class ScheduleManager {
         const normalizedSubject = String(subject || '').trim().toLowerCase();
         const normalizedProgram = this.normalizeProgram(program);
         const activeTerm = String(this.term || '').trim().toLowerCase();
+
+        const componentEquivalencyKey =
+            String(component?.equivalencyKey || '')
+                .trim()
+                .toUpperCase();
+        if (componentEquivalencyKey) {
+            const componentTerm =
+                String(component.term || activeTerm).trim().toLowerCase();
+            const equivalencyMatches = this.curriculumCatalog.filter(entry =>
+                this.normalizeProgram(entry.program) === normalizedProgram &&
+                String(entry.year) === String(preferredYear) &&
+                String(entry.term || '').trim().toLowerCase() ===
+                    componentTerm &&
+                String(entry.equivalencyKey || '').trim().toUpperCase() ===
+                    componentEquivalencyKey
+            );
+
+            return equivalencyMatches.length === 1 &&
+                this.areCurriculumEntriesEquivalentByKey(
+                    component,
+                    equivalencyMatches[0]
+                )
+                ? equivalencyMatches[0]
+                : null;
+        }
 
         const componentCode =
             String(component?.code || component?.courseCode || '')

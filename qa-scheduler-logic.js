@@ -875,6 +875,208 @@ async function verifyCurriculumComponentOptions() {
         throw new Error('Selection accepted a component missing from one selected program.');
     }
 
+    const nstpEntries = global.window.CURRICULUM_CATALOG.filter(entry =>
+        entry.equivalencyKey === 'NSTP_2_SHARED'
+    );
+    const bsmeNstp = nstpEntries.find(entry =>
+        entry.program === 'BSME'
+    );
+    const cpeNstp = nstpEntries.find(entry =>
+        entry.program === 'BSCpE'
+    );
+    if (
+        nstpEntries.length !== 2 ||
+        !bsmeNstp ||
+        !cpeNstp ||
+        bsmeNstp.year !== 1 ||
+        cpeNstp.year !== 1 ||
+        bsmeNstp.term !== '2nd semester' ||
+        cpeNstp.term !== '2nd semester' ||
+        bsmeNstp.name !== 'NSTP 2' ||
+        bsmeNstp.code !== 'NSTP 2' ||
+        cpeNstp.name !== 'Civil Welfare Training Service 2' ||
+        cpeNstp.code !== 'NSTP 2-' ||
+        bsmeNstp.units !== 3 ||
+        cpeNstp.units !== 3
+    ) {
+        throw new Error('NSTP 2 equivalency changed or omitted original curriculum values.');
+    }
+
+    componentManager.term = '2nd semester';
+    componentManager.activeSchedulePeriod.term = '2nd semester';
+    componentManager.selectedClassSections = ['BSME - 1A', 'BSCpE - 1A'];
+    componentManager.curriculumCatalog = nstpEntries;
+    componentManager.schedules = [];
+    componentManager.selectedCurriculumOptionKey = null;
+    const nstpOptions =
+        componentManager.getSubjectsForSelectedClassSections();
+    if (
+        !nstpOptions.some(entry =>
+            entry.program === 'BSME' &&
+            entry.name === 'NSTP 2' &&
+            entry.code === 'NSTP 2'
+        )
+    ) {
+        throw new Error('Combined BSME/BSCpE sections omitted their explicitly equivalent NSTP 2.');
+    }
+
+    subjectInput.value = bsmeNstp.name;
+    componentManager.selectedCurriculumOptionKey =
+        componentManager.getCurriculumOptionKey(bsmeNstp);
+    if (componentManager.getSelectedCurriculumEntry() !== bsmeNstp) {
+        throw new Error('Combined NSTP 2 selection did not preserve the first program entry.');
+    }
+    componentManager.renderSubjectOptions('NSTP 2');
+    if (
+        !subjectList.innerHTML.includes('NSTP 2') ||
+        !subjectList.innerHTML.includes('data-curriculum-key')
+    ) {
+        throw new Error('Combined NSTP 2 was not rendered as a selectable dropdown option.');
+    }
+    const resolvedCpeNstp =
+        componentManager.getCurriculumEntryForProgramSubject(
+            bsmeNstp.name.toLowerCase(),
+            'BSCpE',
+            1,
+            bsmeNstp
+        );
+    const resolvedBsmeNstp =
+        componentManager.getCurriculumEntryForProgramSubject(
+            cpeNstp.name.toLowerCase(),
+            'BSME',
+            1,
+            cpeNstp
+        );
+    if (
+        resolvedCpeNstp !== cpeNstp ||
+        resolvedBsmeNstp !== bsmeNstp ||
+        resolvedCpeNstp.name !== 'Civil Welfare Training Service 2' ||
+        resolvedCpeNstp.code !== 'NSTP 2-' ||
+        resolvedCpeNstp.units !== 3 ||
+        resolvedBsmeNstp.name !== 'NSTP 2' ||
+        resolvedBsmeNstp.code !== 'NSTP 2' ||
+        resolvedBsmeNstp.units !== 3
+    ) {
+        throw new Error('Equivalent NSTP 2 did not resolve each program’s original curriculum record.');
+    }
+    for (const targetEquivalencyKey of ['', 'NSTP_2_OTHER']) {
+        const sameCodeAndNameEntry = {
+            ...bsmeNstp,
+            program: 'BSCpE',
+            equivalencyKey: targetEquivalencyKey
+        };
+        if (
+            componentManager.getCurriculumEntryForComponent(
+                bsmeNstp,
+                [sameCodeAndNameEntry]
+            ) !== null
+        ) {
+            throw new Error('Keyed component matched an entry without the exact equivalency key.');
+        }
+
+        componentManager.curriculumCatalog = [sameCodeAndNameEntry];
+        if (
+            componentManager.getCurriculumEntryForProgramSubject(
+                bsmeNstp.name.toLowerCase(),
+                'BSCpE',
+                1,
+                bsmeNstp
+            ) !== null
+        ) {
+            throw new Error('Program resolution fell back to matching code or name for a keyed component.');
+        }
+    }
+    componentManager.curriculumCatalog = nstpEntries;
+    if (
+        componentManager.getCurriculumEntryForProgramSubject(
+            bsmeNstp.name.toLowerCase(),
+            'BSCpE',
+            2,
+            bsmeNstp
+        ) !== null ||
+        componentManager.getCurriculumEntryForProgramSubject(
+            bsmeNstp.name.toLowerCase(),
+            'BSCpE',
+            1,
+            { ...bsmeNstp, term: '1st semester' }
+        ) !== null
+    ) {
+        throw new Error('Equivalency resolution escaped the selected year or term.');
+    }
+
+    componentManager.selectedClassSections = ['BSME - 1A'];
+    if (
+        !componentManager.getSubjectsForSelectedClassSections().some(entry =>
+            entry === bsmeNstp
+        )
+    ) {
+        throw new Error('Single-section NSTP 2 filtering changed.');
+    }
+
+    const relatedUnkeyedEntries = [
+        {
+            program: 'BSME', year: 1, term: '2nd semester',
+            code: 'NSTP 2', name: 'NSTP 2', delivery: 'lec',
+            lecHours: 3, labHours: 0, units: 3
+        },
+        {
+            program: 'BSCpE', year: 1, term: '2nd semester',
+            code: 'NSTP 2-', name: 'Civil Welfare Training Service 2',
+            delivery: 'lec', lecHours: 3, labHours: 0, units: 3
+        }
+    ];
+    componentManager.selectedClassSections = ['BSME - 1A', 'BSCpE - 1A'];
+    componentManager.curriculumCatalog = relatedUnkeyedEntries;
+    if (
+        componentManager.getSubjectsForSelectedClassSections().some(entry =>
+            entry.name === 'NSTP 2'
+        )
+    ) {
+        throw new Error('Related entries without matching equivalency keys were treated as equivalent.');
+    }
+
+    const incompatibleEntries = [
+        { ...bsmeNstp },
+        { ...cpeNstp, equivalencyKey: 'NSTP_2_SHARED' }
+    ];
+    componentManager.curriculumCatalog = [
+        incompatibleEntries[0],
+        { ...incompatibleEntries[1], delivery: 'lab' }
+    ];
+    if (componentManager.getSubjectsForSelectedClassSections().length) {
+        throw new Error('Equivalent subjects with different delivery types were accepted.');
+    }
+    for (const incompatibleHours of [
+        { lecHours: 2 },
+        { labHours: 1 }
+    ]) {
+        componentManager.curriculumCatalog = [
+            incompatibleEntries[0],
+            { ...incompatibleEntries[1], ...incompatibleHours }
+        ];
+        if (componentManager.getSubjectsForSelectedClassSections().length) {
+            throw new Error('Equivalent subjects with incompatible teaching hours were accepted.');
+        }
+    }
+    componentManager.curriculumCatalog = [
+        incompatibleEntries[0],
+        { ...incompatibleEntries[1] },
+        { ...incompatibleEntries[1], code: 'NSTP 2-ALT' }
+    ];
+    if (componentManager.getSubjectsForSelectedClassSections().length) {
+        throw new Error('Ambiguous equivalency matches were accepted.');
+    }
+    if (
+        componentManager.getCurriculumEntryForProgramSubject(
+            bsmeNstp.name.toLowerCase(),
+            'BSCpE',
+            1,
+            bsmeNstp
+        ) !== null
+    ) {
+        throw new Error('Program resolution accepted ambiguous equivalency matches.');
+    }
+
     const pathfitEntries = global.window.CURRICULUM_CATALOG.filter(entry =>
         ['BSEE', 'BSME'].includes(entry.program) &&
         Number(entry.year) === 2 &&
