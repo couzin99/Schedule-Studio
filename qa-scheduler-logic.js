@@ -307,8 +307,8 @@ const standardLoadValues = getLoadRowValues(
     reviewManager.generateTeacherLoadElement('TEACHER A', '1st semester').innerHTML,
     'STANDARD THREE-HOUR SUBJECT'
 );
-if (standardLoadValues[3] !== '3' || standardLoadValues[4] !== '3') {
-    throw new Error('Non-Review teacher-load hours should retain the curriculum calculation.');
+if (standardLoadValues[3] !== '3' || standardLoadValues[4] !== '4') {
+    throw new Error('Teacher-load hours should sum both actual two-hour weekly meetings.');
 }
 
 const teachingLoadSchedules = (courseCount, mixedCourseCount = 0) =>
@@ -320,7 +320,9 @@ const teachingLoadSchedules = (courseCount, mixedCourseCount = 0) =>
             units: 3,
             lecHours: isMixed ? 2 : 3,
             labHours: isMixed ? 1 : 0,
-            delivery: isMixed ? 'lec/lab' : 'lec'
+            delivery: isMixed ? 'lec/lab' : 'lec',
+            startTime: '08:00',
+            endTime: isMixed ? '13:00' : '11:00'
         });
     });
 
@@ -328,18 +330,24 @@ const loadComponentCases = [
     {
         name: 'lecture-only',
         schedule: { units: 3, lecHours: 3, labHours: 0, delivery: 'lec' },
+        startTime: '08:00',
+        endTime: '11:00',
         expectedUnits: '3',
         expectedHours: '3'
     },
     {
         name: 'laboratory-only',
-        schedule: { units: 1, lecHours: 0, labHours: 1, delivery: 'lab' },
-        expectedUnits: '1',
+        schedule: { units: 2, lecHours: 0, labHours: 2, delivery: 'lab' },
+        startTime: '11:00',
+        endTime: '14:00',
+        expectedUnits: '2',
         expectedHours: '3'
     },
     {
         name: 'mixed lecture/laboratory',
         schedule: { units: 3, lecHours: 2, labHours: 1, delivery: 'lec/lab' },
+        startTime: '08:00',
+        endTime: '13:00',
         expectedUnits: '3',
         expectedHours: '5'
     }
@@ -349,6 +357,8 @@ for (const testCase of loadComponentCases) {
         row({
             subject: `LOAD ${testCase.name.toUpperCase()}`,
             courseCode: `LOAD ${testCase.name}`,
+            startTime: testCase.startTime,
+            endTime: testCase.endTime,
             ...testCase.schedule
         })
     ];
@@ -368,6 +378,167 @@ for (const testCase of loadComponentCases) {
             `${testCase.name} teaching load should report ${testCase.expectedUnits} units and ${testCase.expectedHours} teaching hours.`
         );
     }
+}
+
+reviewManager.schedules = [
+    row({
+        subject: 'Object Oriented Programming',
+        courseCode: 'CPE 3',
+        program: 'BSCpE',
+        year: 1,
+        courseYear: 'BSCpE - 1A',
+        units: 2,
+        lecHours: 0,
+        labHours: 2,
+        delivery: 'lab',
+        day: 'Monday',
+        startTime: '11:00',
+        endTime: '14:00'
+    }),
+    row({
+        subject: 'Object Oriented Programming',
+        courseCode: 'CPE 3',
+        program: 'BSCpE',
+        year: 2,
+        courseYear: 'BSCpE - 2A',
+        units: 2,
+        lecHours: 0,
+        labHours: 2,
+        delivery: 'lab',
+        day: 'Tuesday',
+        startTime: '07:00',
+        endTime: '10:00'
+    })
+];
+const oopLoadHtml =
+    reviewManager.generateTeacherLoadElement('TEACHER A', '1st semester').innerHTML;
+const oopFirstYear = getLoadRowValues(oopLoadHtml, 'BSCpE - 1A');
+const oopSecondYear = getLoadRowValues(oopLoadHtml, 'BSCpE - 2A');
+const oopTotal = getTotalLoadValues(oopLoadHtml);
+if (
+    oopFirstYear[4] !== '3' ||
+    oopSecondYear[4] !== '3' ||
+    oopTotal[2] !== '6'
+) {
+    throw new Error('The merged OOP lab sections should each show their actual three-hour meeting duration.');
+}
+
+reviewManager.schedules = [
+    row({
+        subject: 'MIXED COMPONENT SUBJECT',
+        courseCode: 'MIX 101 LEC',
+        units: 2,
+        lecHours: 2,
+        labHours: 0,
+        delivery: 'lec',
+        day: 'Monday',
+        startTime: '08:00',
+        endTime: '10:00'
+    }),
+    row({
+        subject: 'MIXED COMPONENT SUBJECT',
+        courseCode: 'MIX 101 LAB',
+        units: 1,
+        lecHours: 0,
+        labHours: 1,
+        delivery: 'lab',
+        day: 'Wednesday',
+        startTime: '11:00',
+        endTime: '14:00'
+    })
+];
+const mixedComponentsHtml =
+    reviewManager.generateTeacherLoadElement('TEACHER A', '1st semester').innerHTML;
+const mixedLecture = getLoadRowValues(mixedComponentsHtml, 'MIX 101 LEC');
+const mixedLab = getLoadRowValues(mixedComponentsHtml, 'MIX 101 LAB');
+const mixedTotal = getTotalLoadValues(mixedComponentsHtml);
+if (
+    mixedLecture[4] !== '2' ||
+    mixedLab[4] !== '3' ||
+    mixedTotal[2] !== '5'
+) {
+    throw new Error('Mixed lecture and laboratory load rows should show their separate actual meeting durations.');
+}
+
+reviewManager.schedules = [
+    row({
+        subject: 'COMBINED LAB SUBJECT',
+        courseCode: 'COMBINED LAB',
+        program: 'BSCpE',
+        year: 1,
+        courseYear: 'BSCpE - 1A',
+        combinedClassId: 'combined-lab-hours',
+        units: 2,
+        lecHours: 0,
+        labHours: 2,
+        delivery: 'lab',
+        day: 'Monday',
+        startTime: '11:00',
+        endTime: '14:00'
+    }),
+    row({
+        subject: 'COMBINED LAB SUBJECT',
+        courseCode: 'COMBINED LAB',
+        program: 'BSCpE',
+        year: 2,
+        courseYear: 'BSCpE - 2A',
+        combinedClassId: 'combined-lab-hours',
+        units: 2,
+        lecHours: 0,
+        labHours: 2,
+        delivery: 'lab',
+        day: 'Monday',
+        startTime: '11:00',
+        endTime: '14:00'
+    }),
+    row({
+        subject: 'COMBINED LAB SUBJECT',
+        courseCode: 'COMBINED LAB',
+        program: 'BSCpE',
+        year: 1,
+        courseYear: 'BSCpE - 1A',
+        combinedClassId: 'combined-lab-hours',
+        units: 2,
+        lecHours: 0,
+        labHours: 2,
+        delivery: 'lab',
+        day: 'Tuesday',
+        startTime: '07:00',
+        endTime: '10:00'
+    }),
+    row({
+        subject: 'COMBINED LAB SUBJECT',
+        courseCode: 'COMBINED LAB',
+        program: 'BSCpE',
+        year: 2,
+        courseYear: 'BSCpE - 2A',
+        combinedClassId: 'combined-lab-hours',
+        units: 2,
+        lecHours: 0,
+        labHours: 2,
+        delivery: 'lab',
+        day: 'Tuesday',
+        startTime: '07:00',
+        endTime: '10:00'
+    })
+];
+const combinedLabHtml =
+    reviewManager.generateTeacherLoadElement('TEACHER A', '1st semester').innerHTML;
+const combinedLabRows = combinedLabHtml
+    .split('</tr>')
+    .filter(rowHtml => rowHtml.includes('COMBINED LAB'));
+const combinedLabValues = getLoadRowValues(
+    combinedLabHtml,
+    'COMBINED LAB SUBJECT'
+);
+const combinedLabTotal = getTotalLoadValues(combinedLabHtml);
+if (
+    combinedLabRows.length !== 1 ||
+    combinedLabValues[3] !== '2' ||
+    combinedLabValues[4] !== '6' ||
+    combinedLabTotal[2] !== '6'
+) {
+    throw new Error('Merged lab records should count each distinct meeting once across multiple days.');
 }
 
 const teachingLoadCases = [
@@ -450,8 +621,8 @@ const ineligibleReviewValues = getLoadRowValues(
     reviewManager.generateTeacherLoadElement('TEACHER A', '1st semester').innerHTML,
     'CE REV 1'
 );
-if (ineligibleReviewValues[3] !== '3' || ineligibleReviewValues[4] !== '3') {
-    throw new Error('Ineligible Review subjects should retain their existing teaching-load calculation.');
+if (ineligibleReviewValues[3] !== '3' || ineligibleReviewValues[4] !== '4') {
+    throw new Error('Ineligible Review teaching load should reflect both actual two-hour meetings.');
 }
 
 const combinedReviewId = 'combined-review-load';
@@ -595,9 +766,29 @@ if (manager.canTeacherTakeSubject('TEACHER A', 'TEST SUBJECT 26', 'BSEE').allowe
 if (manager.getSubjectEquivalencyKey('ETHICS', 'BSEE') !== manager.getSubjectEquivalencyKey('ETHICS', 'BSME')) throw new Error('Common-subject equivalency regressed.');
 
 manager.schedules = [
-    row({ combinedClassId: combinedId, courseYear: 'BSEE - 1A', courseCode: 'GE AA' }),
-    row({ combinedClassId: combinedId, courseYear: 'BSME - 1A', program: 'BSME', courseCode: 'GEAA' }),
-    row({ combinedClassId: combinedId, courseYear: 'BSME - 1B', program: 'BSME', courseCode: 'GEAA' })
+    row({
+        combinedClassId: combinedId,
+        courseYear: 'BSEE - 1A',
+        courseCode: 'GE AA',
+        startTime: '08:00',
+        endTime: '11:00'
+    }),
+    row({
+        combinedClassId: combinedId,
+        courseYear: 'BSME - 1A',
+        program: 'BSME',
+        courseCode: 'GEAA',
+        startTime: '08:00',
+        endTime: '11:00'
+    }),
+    row({
+        combinedClassId: combinedId,
+        courseYear: 'BSME - 1B',
+        program: 'BSME',
+        courseCode: 'GEAA',
+        startTime: '08:00',
+        endTime: '11:00'
+    })
 ];
 const logicalRows = manager.getLogicalScheduleRows(manager.schedules);
 if (logicalRows.length !== 1 || logicalRows[0].displayCourseYear !== 'BSEE - 1A + BSME - 1A + BSME - 1B') throw new Error('Combined rows were not grouped for room reporting.');
@@ -875,6 +1066,107 @@ async function verifyCurriculumComponentOptions() {
         throw new Error('Selection accepted a component missing from one selected program.');
     }
 
+    const pathfit4Entries = global.window.CURRICULUM_CATALOG.filter(entry =>
+        entry.equivalencyKey === 'PATHFIT_4_SHARED'
+    );
+    const bscePathfit4 = pathfit4Entries.find(entry =>
+        entry.program === 'BSCE'
+    );
+    const cpePathfit4 = pathfit4Entries.find(entry =>
+        entry.program === 'BSCpE'
+    );
+    if (
+        pathfit4Entries.length !== 2 ||
+        !bscePathfit4 ||
+        !cpePathfit4 ||
+        bscePathfit4.year !== 2 ||
+        cpePathfit4.year !== 2 ||
+        bscePathfit4.term !== '2nd semester' ||
+        cpePathfit4.term !== '2nd semester' ||
+        bscePathfit4.code !== 'PATHFIT 4' ||
+        cpePathfit4.code !== 'PATHFIT4' ||
+        bscePathfit4.name !==
+            'Physical Activites Toward Health and Fitness (Sports)' ||
+        cpePathfit4.name !==
+            'Sports, Martial Arts, Outdoor, and Adventure Activities'
+    ) {
+        throw new Error('PATHFIT 4 equivalency changed or altered the catalog entries.');
+    }
+
+    componentManager.term = '2nd semester';
+    componentManager.activeSchedulePeriod.term = '2nd semester';
+    componentManager.selectedClassSections = ['BSCE - 2B', 'BSCpE - 2A'];
+    componentManager.curriculumCatalog = pathfit4Entries;
+    componentManager.schedules = [];
+    componentManager.selectedCurriculumOptionKey = null;
+    const pathfit4Options =
+        componentManager.getSubjectsForSelectedClassSections();
+    if (
+        pathfit4Options.length !== 1 ||
+        pathfit4Options[0] !== bscePathfit4
+    ) {
+        throw new Error('CE 2B and CpE-2A did not share the explicitly equivalent PATHFIT 4.');
+    }
+    if (
+        componentManager.getCurriculumEntryForProgramSubject(
+            bscePathfit4.name,
+            'BSCpE',
+            2,
+            bscePathfit4
+        ) !== cpePathfit4 ||
+        componentManager.getCurriculumEntryForProgramSubject(
+            cpePathfit4.name,
+            'BSCE',
+            2,
+            cpePathfit4
+        ) !== bscePathfit4
+    ) {
+        throw new Error('PATHFIT 4 equivalency did not resolve each program’s original catalog entry.');
+    }
+    if (
+        [
+            { year: 1 },
+            { term: '1st semester' },
+            { delivery: 'lab' },
+            { lecHours: 3 },
+            { labHours: 1 }
+        ].some(changes =>
+            componentManager.areCurriculumEntriesEquivalentByKey(
+                bscePathfit4,
+                { ...cpePathfit4, ...changes }
+            )
+        )
+    ) {
+        throw new Error('PATHFIT 4 equivalency bypassed year, term, delivery, or hours safeguards.');
+    }
+    if (
+        componentManager.getCurriculumEntryForComponent(
+            bscePathfit4,
+            [cpePathfit4, { ...cpePathfit4 }]
+        ) !== null
+    ) {
+        throw new Error('Ambiguous PATHFIT 4 equivalency matches were accepted.');
+    }
+
+    const unrelatedPathfitEntries =
+        global.window.CURRICULUM_CATALOG.filter(entry =>
+            entry.program === 'BSCE' &&
+            entry.year === 2 &&
+            /^PATHFIT 3/.test(entry.code)
+        );
+    if (
+        unrelatedPathfitEntries.some(entry => entry.equivalencyKey) ||
+        !unrelatedPathfitEntries.length ||
+        componentManager.getCurriculumEntryForProgramSubject(
+            bscePathfit4.name,
+            'BSCpE',
+            2,
+            unrelatedPathfitEntries[0]
+        ) !== null
+    ) {
+        throw new Error('PATHFIT 4 equivalency matched an unrelated PATHFIT curriculum entry.');
+    }
+
     const nstpEntries = global.window.CURRICULUM_CATALOG.filter(entry =>
         entry.equivalencyKey === 'NSTP_2_SHARED'
     );
@@ -884,22 +1176,40 @@ async function verifyCurriculumComponentOptions() {
     const cpeNstp = nstpEntries.find(entry =>
         entry.program === 'BSCpE'
     );
+    const bseeNstp = nstpEntries.find(entry =>
+        entry.program === 'BSEE'
+    );
     if (
-        nstpEntries.length !== 2 ||
+        nstpEntries.length !== 3 ||
         !bsmeNstp ||
         !cpeNstp ||
+        !bseeNstp ||
         bsmeNstp.year !== 1 ||
         cpeNstp.year !== 1 ||
+        bseeNstp.year !== 1 ||
         bsmeNstp.term !== '2nd semester' ||
         cpeNstp.term !== '2nd semester' ||
+        bseeNstp.term !== '2nd semester' ||
         bsmeNstp.name !== 'NSTP 2' ||
         bsmeNstp.code !== 'NSTP 2' ||
         cpeNstp.name !== 'Civil Welfare Training Service 2' ||
         cpeNstp.code !== 'NSTP 2-' ||
+        bseeNstp.name !== 'NSTP 2' ||
+        bseeNstp.code !== 'NSTP 2' ||
         bsmeNstp.units !== 3 ||
-        cpeNstp.units !== 3
+        cpeNstp.units !== 3 ||
+        bseeNstp.units !== 3
     ) {
         throw new Error('NSTP 2 equivalency changed or omitted original curriculum values.');
+    }
+    if (
+        [bsmeNstp, cpeNstp, bseeNstp].some(entry =>
+            entry.delivery !== 'lec' ||
+            entry.lecHours !== 3 ||
+            entry.labHours !== 0
+        )
+    ) {
+        throw new Error('NSTP 2 equivalencies do not share the expected lecture component.');
     }
 
     componentManager.term = '2nd semester';
@@ -959,6 +1269,42 @@ async function verifyCurriculumComponentOptions() {
     ) {
         throw new Error('Equivalent NSTP 2 did not resolve each program’s original curriculum record.');
     }
+
+    componentManager.curriculumCatalog = nstpEntries;
+    componentManager.selectedClassSections = ['BSEE - 1A', 'BSCpE - 1A'];
+    const bseeCpeNstpOptions =
+        componentManager.getSubjectsForSelectedClassSections();
+    if (
+        !bseeCpeNstpOptions.some(entry =>
+            entry.program === 'BSEE' &&
+            entry.name === 'NSTP 2' &&
+            entry.code === 'NSTP 2'
+        )
+    ) {
+        throw new Error('Combined BSEE/BSCpE sections omitted their equivalent NSTP 2.');
+    }
+    const resolvedCpeFromBsee =
+        componentManager.getCurriculumEntryForProgramSubject(
+            bseeNstp.name,
+            'BSCpE',
+            1,
+            bseeNstp
+        );
+    const resolvedBseeFromCpe =
+        componentManager.getCurriculumEntryForProgramSubject(
+            cpeNstp.name,
+            'BSEE',
+            1,
+            cpeNstp
+        );
+    if (
+        resolvedCpeFromBsee !== cpeNstp ||
+        resolvedBseeFromCpe !== bseeNstp
+    ) {
+        throw new Error('BSEE/BSCpE NSTP 2 did not resolve each program’s original curriculum record.');
+    }
+
+    componentManager.selectedClassSections = ['BSME - 1A', 'BSCpE - 1A'];
     for (const targetEquivalencyKey of ['', 'NSTP_2_OTHER']) {
         const sameCodeAndNameEntry = {
             ...bsmeNstp,

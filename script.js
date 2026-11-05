@@ -3321,43 +3321,6 @@ class ScheduleManager {
         return false;
     };
 
-    const getTeachingHours = (schedule) => {
-        const lectureHours = Number(schedule.lecHours);
-        const laboratoryUnits = Number(schedule.labHours);
-
-        if (
-            Number.isFinite(lectureHours) &&
-            lectureHours > 0 &&
-            Number.isFinite(laboratoryUnits) &&
-            laboratoryUnits > 0
-        ) {
-            return lectureHours + laboratoryUnits * 3;
-        }
-
-        const units = getUnits(schedule);
-
-        return isLaboratory(schedule)
-            ? units * 3
-            : units;
-    };
-
-    const isEligibleReviewSchedule = (schedule) => {
-        const subjectName = String(schedule.subject || '')
-            .trim()
-            .toLowerCase();
-        const courseYear = this.parseCourseYear(schedule.courseYear);
-        const program = this.normalizeProgram(
-            schedule.program || courseYear?.program
-        ).toUpperCase();
-        const year = Number(schedule.year ?? courseYear?.year);
-        const term = String(schedule.term || '').trim().toLowerCase();
-
-        return /(?:^|\s)review [12]$/.test(subjectName) &&
-            ['BSCE', 'BSEE', 'BSME'].includes(program) &&
-            year === 4 &&
-            ['1st semester', '2nd semester'].includes(term);
-    };
-
     const getUniqueScheduledMinutes = (meetings) => {
         const seenMeetings = new Set();
 
@@ -3375,13 +3338,8 @@ class ScheduleManager {
         }, 0);
     };
 
-    const getLoadTeachingHours = ({ schedule, meetings }) => {
-        const eligibleReviewMeetings =
-            meetings.filter(isEligibleReviewSchedule);
-
-        return eligibleReviewMeetings.length
-            ? getUniqueScheduledMinutes(eligibleReviewMeetings) / 60
-            : getTeachingHours(schedule);
+    const getLoadTeachingHours = ({ meetings }) => {
+        return getUniqueScheduledMinutes(meetings) / 60;
     };
 
         const dayOrder = { Monday: 1, Tuesday: 2, Wednesday: 3, Thursday: 4, Friday: 5, Saturday: 6 };
