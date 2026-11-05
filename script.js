@@ -35,6 +35,30 @@ class ScheduleManager {
         this.classSectionSearchQuery = '';
         this.term = '';
         this.teacherViewSearch = '';
+        this.teacherProfileSearch = '';
+        this.teacherProfilePage = 1;
+        this.selectedTeacherProfile = null;
+        this.teacherProfileTab = 'load';
+        this.isPublicTeacherPortal = false;
+        this.teacherPortalDirectory = [];
+        this.teacherPortalSchedules = [];
+        this.teacherPortalScheduleRequestId = 0;
+        this.teacherPortalScheduleLoading = false;
+        this.teacherPortalScheduleError = '';
+        this.teacherPortalActivePeriod = null;
+        this.teacherPortalPeriodLoadError = null;
+        this.teacherPortalAdminUserId = '9e2fcb80-7cac-47c6-b495-d5b6ebf296dc';
+        this.teacherPortalAdminPeriods = [];
+        this.teacherPortalAdminPeriodsLoading = false;
+        this.teacherPortalAdminPeriodError = '';
+        this.teacherPortalAdminPeriodChanging = false;
+        this.teacherPortalAdminPeriodRequestId = 0;
+        this.teacherPortalAdminPeriodChangeRequestId = 0;
+        this.teacherPortalReturnToWorkspace = false;
+        this.teacherPortalReturnViewType = 'teacher';
+        this.teacherPortalReturnSchedulerState = null;
+        this.activeAuthPortal = null;
+        this.teacherPortalRequestId = 0;
         this.teacherScheduleSearch = '';
         this.studentSectionSearch = '';
         this.roomAssignmentSearch = '';
@@ -81,6 +105,40 @@ class ScheduleManager {
     }
 
     setupEventListeners() {
+        document.getElementById('openSchedulerLogin')?.addEventListener('click', () => {
+            this.activeAuthPortal = 'scheduler';
+            document.getElementById('applicationLanding')?.classList.add('hidden');
+            if (this.currentUser) {
+                this.applySession({ user: this.currentUser });
+            } else {
+                document.getElementById('authScreen')?.classList.remove('hidden');
+                if (!this.supabase) this.setAuthMessage('Supabase is not configured yet. Add a project URL and publishable key.', 'error');
+            }
+        });
+        document.getElementById('openTeacherPortalLogin')?.addEventListener('click', () => {
+            this.activeAuthPortal = 'teacher';
+            this.enterPublicTeacherPortal();
+        });
+        ['openPublicTeacherPortalWorkspace', 'openPublicTeacherPortalApp']
+            .forEach(id => {
+                document.getElementById(id)?.addEventListener('click', () => {
+                    this.activeAuthPortal = 'teacher';
+                    this.enterPublicTeacherPortal();
+                });
+            });
+        document.getElementById('teacherPortalReturnToScheduler')?.addEventListener(
+            'click',
+            () => this.returnToSchedulerFromTeacherPortal()
+        );
+        document.getElementById('teacherPortalBackToLanding')?.addEventListener(
+            'click',
+            () => this.returnToStartingPageFromTeacherPortal()
+        );
+        document.getElementById('teacherPortalAdminPeriodSelect')?.addEventListener(
+            'change',
+            event => this.changeTeacherPortalActivePeriod(event.currentTarget.value)
+        );
+
         document.getElementById('scheduleForm').addEventListener('submit', (e) => this.handleAddSchedule(e));
         const classSectionButton = document.getElementById('classSectionSelect');
         const classSectionOptions = document.getElementById('classSectionOptions');
@@ -170,6 +228,45 @@ class ScheduleManager {
             this.teacherViewSearch = e.target.value.trim().toLowerCase();
             if (this.pagination) this.resetPage('teacher');
             this.renderTeacherView();
+        });
+        document.getElementById('teacherProfileSearch')?.addEventListener('input', e => {
+            this.setTeacherProfileSearch(e.target.value);
+        });
+        document.getElementById('teacherProfilePagination')?.addEventListener('click', e => {
+            const button = e.target.closest('[data-teacher-profile-page]');
+            if (!button || button.disabled) return;
+            this.navigateTeacherProfilePage(button.dataset.teacherProfilePage);
+        });
+        document.getElementById('teacherProfileResults')?.addEventListener('click', e => {
+            const result = e.target.closest('[data-teacher-profile-key]');
+            if (!result) return;
+            const teacher = this.getTeacherDirectoryEntries().find(
+                entry => entry.key === result.dataset.teacherProfileKey
+            );
+            if (!teacher) return;
+            if (this.isPublicTeacherPortal) {
+                this.selectPublicTeacher(teacher);
+            } else {
+                this.selectedTeacherProfile = teacher;
+                this.teacherProfileTab = 'load';
+                this.renderTeacherProfileView();
+            }
+        });
+        document.getElementById('teacherProfileBack')?.addEventListener('click', () => {
+            if (this.isPublicTeacherPortal) {
+                this.teacherPortalScheduleRequestId++;
+                this.teacherPortalSchedules = [];
+                this.teacherPortalScheduleLoading = false;
+                this.teacherPortalScheduleError = '';
+            }
+            this.selectedTeacherProfile = null;
+            this.renderTeacherProfileView();
+        });
+        document.querySelectorAll('[data-teacher-profile-tab]').forEach(button => {
+            button.addEventListener('click', event => {
+                this.teacherProfileTab = event.currentTarget.dataset.teacherProfileTab;
+                this.renderTeacherProfileDashboard();
+            });
         });
         document.getElementById('teacherScheduleSearch')?.addEventListener('input', e => {
             this.teacherScheduleSearch = e.target.value.trim().toLowerCase();
@@ -1557,6 +1654,7 @@ class ScheduleManager {
     render() {
         this.renderDashboard();
         this.renderTeacherView();
+        this.renderTeacherProfileView();
         this.renderAllView();
         this.renderStudentsView();
         this.renderRoomAssignmentsView();
@@ -1620,6 +1718,7 @@ class ScheduleManager {
             if (teacherPagination) teacherPagination.innerHTML = '';
             return;
         }
+
         if (uniqueTeachers.length === 0) {
             teacherList.innerHTML = '<p class="empty-message">No teachers match your search.</p>';
             if (teacherPagination) teacherPagination.innerHTML = '';
@@ -1719,6 +1818,328 @@ class ScheduleManager {
                 teacherPage.totalItems
             );
         }
+    }
+
+    normalizeTeacherName(name) {
+        return String(name || '').trim().replace(/\s+/g, ' ');
+    }
+
+    getTeacherDirectoryEntries(query = '') {
+        let entries;
+        if (this.isPublicTeacherPortal) {
+            entries = this.teacherPortalDirectory;
+        } else {
+            const catalogCounts = new Map();
+            this.teachers.forEach(name => {
+                const key = this.normalizeTeacherName(name).toLowerCase();
+                if (key) catalogCounts.set(key, (catalogCounts.get(key) || 0) + 1);
+            });
+
+            const localEntries = new Map();
+            [...this.teachers, ...this.schedules.map(schedule => schedule.teacherName)]
+                .forEach(name => {
+                    const normalizedName = this.normalizeTeacherName(name);
+                    const key = normalizedName.toLowerCase();
+                    if (!key || localEntries.has(key)) return;
+                    localEntries.set(key, {
+                        key,
+                        name: normalizedName,
+                        catalogRecordCount: catalogCounts.get(key) || 0
+                    });
+                });
+            entries = [...localEntries.values()];
+        }
+
+        const normalizedQuery = this.normalizeTeacherName(query).toLowerCase();
+        return entries
+            .filter(entry => !normalizedQuery || entry.name.toLowerCase().includes(normalizedQuery))
+            .sort((first, second) => first.name.localeCompare(second.name));
+    }
+
+    getTeacherProfileSchedules(teacherName) {
+        if (this.isPublicTeacherPortal) return this.teacherPortalSchedules;
+        const term = this.activeSchedulePeriod?.term || this.term || null;
+        const teacherKey = this.normalizeTeacherName(teacherName).toLowerCase();
+        return this.schedules.filter(schedule =>
+            this.normalizeTeacherName(schedule.teacherName).toLowerCase() === teacherKey &&
+            (term === null || (term ? this.sameTerm(schedule.term, term) : !schedule.term))
+        );
+    }
+
+    getTeacherProfilePeriodLabel() {
+        if (this.isPublicTeacherPortal) {
+            if (this.teacherPortalActivePeriod) {
+                return `${this.teacherPortalActivePeriod.school_year} • ${this.formatTermLabel(this.teacherPortalActivePeriod.term)}`;
+            }
+            return this.teacherPortalPeriodLoadError
+                ? 'Unable to load the active academic period'
+                : 'No active academic period selected';
+        }
+        if (this.activeSchedulePeriod) {
+            return `${this.activeSchedulePeriod.school_year} • ${this.formatTermLabel(this.activeSchedulePeriod.term)}`;
+        }
+        const schoolYear = this.getCurrentSchoolYear();
+        const term = this.term ? this.formatTermLabel(this.term) : '';
+        return [schoolYear, term].filter(Boolean).join(' • ') || 'No active academic period selected';
+    }
+
+    renderTeacherProfileView() {
+        const directory = document.getElementById('teacherProfileDirectory');
+        const dashboard = document.getElementById('teacherProfileDashboard');
+        if (!directory || !dashboard) return;
+        const hasSelection = Boolean(this.selectedTeacherProfile);
+        const backButton = document.getElementById('teacherProfileBack');
+        if (this.isPublicTeacherPortal && backButton) {
+            backButton.classList.toggle('hidden', !hasSelection);
+            if (hasSelection) {
+                backButton.style.setProperty('display', 'inline-flex', 'important');
+            } else {
+                backButton.style.removeProperty('display');
+            }
+        }
+        directory.classList.toggle('hidden', hasSelection);
+        dashboard.classList.toggle('hidden', !hasSelection);
+        if (hasSelection) this.renderTeacherProfileDashboard();
+        else this.renderTeacherProfileResults();
+    }
+
+    async selectPublicTeacher(teacher, { preserveTab = false } = {}) {
+        const requestId = ++this.teacherPortalScheduleRequestId;
+        this.selectedTeacherProfile = teacher;
+        if (!preserveTab) this.teacherProfileTab = 'load';
+        this.teacherPortalSchedules = [];
+        this.teacherPortalScheduleLoading = true;
+        this.teacherPortalScheduleError = '';
+        this.setTeacherPortalMessage('Loading this teacher’s schedule…', '');
+        this.renderTeacherProfileView();
+
+        try {
+            const { data, error } =
+                await TeacherPortalDataService.fetchTeacherSchedules(
+                    this.supabase,
+                    teacher.name
+                );
+            if (
+                requestId !== this.teacherPortalScheduleRequestId ||
+                !this.isPublicTeacherPortal ||
+                this.selectedTeacherProfile?.key !== teacher.key
+            ) return;
+            if (error) throw error;
+
+            const rows = typeof data === 'string' ? JSON.parse(data) : data;
+            if (!Array.isArray(rows)) {
+                throw new Error('The teacher schedule request returned an invalid response.');
+            }
+            this.teacherPortalSchedules =
+                rows.map(row => this.mapTeacherPortalSchedule(row));
+            this.teacherPortalScheduleLoading = false;
+            this.setTeacherPortalMessage('', '');
+            this.renderTeacherProfileDashboard();
+        } catch (error) {
+            if (
+                requestId !== this.teacherPortalScheduleRequestId ||
+                !this.isPublicTeacherPortal ||
+                this.selectedTeacherProfile?.key !== teacher.key
+            ) return;
+            console.error('Public teacher schedule load failed:', error);
+            this.teacherPortalSchedules = [];
+            this.teacherPortalScheduleLoading = false;
+            this.teacherPortalScheduleError =
+                error.message || 'Unable to load this teacher’s schedule.';
+            this.setTeacherPortalMessage(this.teacherPortalScheduleError, 'error');
+            this.renderTeacherProfileDashboard();
+        }
+    }
+
+    renderTeacherProfileResults() {
+        const results = document.getElementById('teacherProfileResults');
+        if (!results || this.selectedTeacherProfile) return;
+        const allTeachers = this.getTeacherDirectoryEntries();
+        const teachers = this.getTeacherDirectoryEntries(this.teacherProfileSearch);
+        const pagination = document.getElementById('teacherProfilePagination');
+        if (!teachers.length) {
+            const emptyMessage = allTeachers.length
+                ? 'No teachers match your search.'
+                : this.isPublicTeacherPortal
+                    ? 'No teachers are available.'
+                    : 'No teachers or saved schedule assignments are available.';
+            results.innerHTML = `<p class="empty-message">${emptyMessage}</p>`;
+            if (pagination) {
+                pagination.innerHTML = '';
+                pagination.classList.add('hidden');
+            }
+            return;
+        }
+
+        const pageCount = Math.ceil(teachers.length / 5);
+        this.teacherProfilePage = Math.min(
+            Math.max(1, this.teacherProfilePage),
+            pageCount
+        );
+        const startIndex = (this.teacherProfilePage - 1) * 5;
+        const pageTeachers = teachers.slice(startIndex, startIndex + 5);
+        results.innerHTML = pageTeachers.map(teacher => {
+            const scheduleCount = this.getTeacherProfileSchedules(teacher.name).length;
+            const matchingRecordCount =
+                Number(teacher.matching_teacher_records ?? teacher.catalogRecordCount) || 0;
+            const ambiguity = matchingRecordCount > 1
+                ? `<span class="teacher-profile-result-warning">${matchingRecordCount} records share this name</span>`
+                : '';
+            const scheduleSummary = this.isPublicTeacherPortal
+                ? 'View teaching load and timetable'
+                : `${scheduleCount} scheduled class${scheduleCount === 1 ? '' : 'es'} in the active period`;
+            return `
+                <button class="teacher-profile-result" type="button" data-teacher-profile-key="${this.escapeHtml(teacher.key)}">
+                    <span class="teacher-profile-result-copy">
+                        <strong>${this.escapeHtml(teacher.name)}</strong>
+                        <small>${scheduleSummary}</small>
+                    </span>
+                    ${ambiguity}
+                    <span class="teacher-profile-result-arrow" aria-hidden="true">→</span>
+                </button>
+            `;
+        }).join('');
+        if (pagination) {
+            const endIndex = Math.min(startIndex + pageTeachers.length, teachers.length);
+            const pageItems = this.getTeacherProfilePaginationItems(
+                this.teacherProfilePage,
+                pageCount
+            );
+            const pageButtons = pageItems.map(page => page === 'ellipsis'
+                ? '<span class="teacher-profile-pagination-ellipsis" aria-hidden="true">…</span>'
+                : `<button type="button" class="teacher-profile-page-number${page === this.teacherProfilePage ? ' active' : ''}" data-teacher-profile-page="${page}"${page === this.teacherProfilePage ? ' aria-current="page"' : ''}>${page}</button>`
+            ).join('');
+            pagination.innerHTML = `
+                <p class="teacher-profile-results-summary">Showing ${startIndex + 1}–${endIndex} of ${teachers.length} teachers</p>
+                <nav class="teacher-profile-pagination-controls${pageCount < 2 ? ' hidden' : ''}" aria-label="Teacher directory pages">
+                    <button type="button" class="teacher-profile-page-step" data-teacher-profile-page="previous"${this.teacherProfilePage === 1 ? ' disabled' : ''}>Previous</button>
+                    ${pageButtons}
+                    <button type="button" class="teacher-profile-page-step" data-teacher-profile-page="next"${this.teacherProfilePage === pageCount ? ' disabled' : ''}>Next</button>
+                </nav>
+            `;
+            pagination.classList.remove('hidden');
+        }
+    }
+
+    getTeacherProfilePaginationItems(currentPage, pageCount) {
+        const pages = new Set([1, pageCount]);
+        for (let page = currentPage - 1; page <= currentPage + 1; page++) {
+            if (page > 1 && page < pageCount) pages.add(page);
+        }
+        const sortedPages = [...pages].sort((first, second) => first - second);
+        return sortedPages.flatMap((page, index) => {
+            if (index && page - sortedPages[index - 1] > 1) {
+                return ['ellipsis', page];
+            }
+            return [page];
+        });
+    }
+
+    setTeacherProfileSearch(query) {
+        this.teacherProfileSearch = query;
+        this.teacherProfilePage = 1;
+        this.renderTeacherProfileResults();
+    }
+
+    setTeacherProfilePage(page) {
+        this.teacherProfilePage = page;
+        this.renderTeacherProfileResults();
+    }
+
+    navigateTeacherProfilePage(action) {
+        const pageCount = Math.ceil(
+            this.getTeacherDirectoryEntries(this.teacherProfileSearch).length / 5
+        );
+        const page = action === 'previous'
+            ? this.teacherProfilePage - 1
+            : action === 'next'
+                ? this.teacherProfilePage + 1
+                : Number(action);
+        this.setTeacherProfilePage(Math.min(pageCount, Math.max(1, page)));
+    }
+
+    renderTeacherProfileDashboard() {
+        const teacher = this.selectedTeacherProfile;
+        if (!teacher) return;
+        const name = document.getElementById('teacherProfileName');
+        const period = document.getElementById('teacherProfilePeriod');
+        const ambiguity = document.getElementById('teacherProfileAmbiguity');
+        const loadTab = document.getElementById('teacherProfileLoadTab');
+        const timetableTab = document.getElementById('teacherProfileTimetableTab');
+        const loadPanel = document.getElementById('teacherProfileLoadPanel');
+        const timetablePanel = document.getElementById('teacherProfileTimetablePanel');
+        if (!name || !period || !ambiguity || !loadPanel || !timetablePanel) return;
+
+        name.textContent = teacher.name;
+        period.textContent = this.getTeacherProfilePeriodLabel();
+        this.renderTeacherPortalAdminPeriodControl();
+        const matchingRecordCount =
+            Number(teacher.matching_teacher_records ?? teacher.catalogRecordCount) || 0;
+        if (matchingRecordCount > 1) {
+            ambiguity.textContent = `${matchingRecordCount} teacher records or accounts share this identical name. Saved assignments store names only, so their records cannot be distinguished and are shown together.`;
+            ambiguity.classList.remove('hidden');
+        } else {
+            ambiguity.textContent = '';
+            ambiguity.classList.add('hidden');
+        }
+
+        const isLoadTab = this.teacherProfileTab !== 'timetable';
+        loadTab?.classList.toggle('active', isLoadTab);
+        loadTab?.setAttribute('aria-selected', String(isLoadTab));
+        timetableTab?.classList.toggle('active', !isLoadTab);
+        timetableTab?.setAttribute('aria-selected', String(!isLoadTab));
+        loadPanel.classList.toggle('active', isLoadTab);
+        loadPanel.hidden = !isLoadTab;
+        timetablePanel.classList.toggle('active', !isLoadTab);
+        timetablePanel.hidden = isLoadTab;
+
+        const schedules = this.getTeacherProfileSchedules(teacher.name);
+        if (!schedules.length) {
+            loadPanel.replaceChildren();
+            timetablePanel.replaceChildren();
+            const emptyLoad = document.createElement('p');
+            emptyLoad.className = 'empty-message';
+            if (this.isPublicTeacherPortal) {
+                emptyLoad.textContent = this.teacherPortalScheduleLoading
+                    ? 'Loading this teacher’s schedule…'
+                    : this.teacherPortalScheduleError ||
+                        'No teaching assignments were found for this teacher in the current academic period.';
+            } else {
+                emptyLoad.textContent = this.activeSchedulePeriod
+                    ? 'No matching teaching assignments were found for the current academic period.'
+                    : 'The scheduler administrator has not selected the current academic period yet.';
+            }
+            loadPanel.appendChild(emptyLoad);
+            const emptyTimetable = document.createElement('p');
+            emptyTimetable.className = 'empty-message';
+            emptyTimetable.textContent = emptyLoad.textContent;
+            timetablePanel.appendChild(emptyTimetable);
+            return;
+        }
+
+        loadPanel.replaceChildren();
+        const loadScroll = document.createElement('div');
+        loadScroll.className = 'teacher-profile-load-scroll';
+        loadScroll.appendChild(this.generateTeacherLoadElement(
+            teacher.name,
+            (this.isPublicTeacherPortal
+                ? this.teacherPortalActivePeriod?.term
+                : this.activeSchedulePeriod?.term || this.term) || null,
+            schedules
+        ));
+        loadPanel.appendChild(loadScroll);
+
+        const allDays = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+        const days = allDays.filter(day => day !== 'Saturday' || schedules.some(schedule => schedule.day === day));
+        const latestEnd = schedules.reduce(
+            (latest, schedule) => Math.max(latest, this.timeToMinutes(schedule.endTime)),
+            0
+        );
+        const displayEnd = Math.min(Math.max(latestEnd, 17 * 60), 21 * 60);
+        const slots = this.generateTimeSlots().filter(
+            slot => this.timeToMinutes(slot.start) < displayEnd
+        );
+        timetablePanel.innerHTML = this.buildScheduleGrid(schedules, days, slots, 'teacher');
     }
 
     renderAllView() {
@@ -2517,11 +2938,18 @@ class ScheduleManager {
     }
 
     switchView(e) {
+        const viewType = e.target.dataset.view;
+        if (
+            viewType === 'teacher-profile' &&
+            !this.isTeacherPortalAdministrator()
+        ) {
+            return;
+        }
         document.querySelectorAll('.toggle-btn').forEach(btn => btn.classList.remove('active'));
         e.target.classList.add('active');
-        const viewType = e.target.dataset.view;
         document.querySelectorAll('.view-content').forEach(view => view.classList.remove('active'));
         const viewId = viewType === 'teacher' ? 'teacherView'
+            : viewType === 'teacher-profile' ? 'teacherProfileView'
             : viewType === 'all' ? 'allView'
             : viewType === 'students' ? 'studentsView'
             : viewType === 'rooms' ? 'roomsView'
@@ -2535,7 +2963,7 @@ class ScheduleManager {
         document.getElementById(viewId).classList.add('active');
         const mainContent = document.querySelector('.main-content');
         if (mainContent) {
-            mainContent.classList.toggle('all-view-active', viewType === 'all' || viewType === 'students' || viewType === 'rooms');
+            mainContent.classList.toggle('all-view-active', viewType === 'teacher-profile' || viewType === 'all' || viewType === 'students' || viewType === 'rooms');
             mainContent.classList.toggle('manage-view-active', viewType === 'manage');
         }
     }
@@ -2554,35 +2982,68 @@ class ScheduleManager {
         const context = document.getElementById('ownerSelectedUserContext');
         const name = document.getElementById('ownerSelectedUserName');
         const email = document.getElementById('ownerSelectedUserEmail');
+        const workspaceContext = document.getElementById('workspaceOwnerContext');
+        const workspaceName = document.getElementById('workspaceOwnerName');
+        const workspaceEmail = document.getElementById('workspaceOwnerEmail');
+        const workspaceWelcomeName = document.getElementById('workspaceWelcomeName');
+        const workspaceWelcomeDescription = document.querySelector
+            ? document.querySelector('#workspaceScreen .workspace-welcome > p:last-child')
+            : null;
         const profile = this.isOwner && this.ownerViewingUserId
             ? this.ownerProfiles.find(
                 item => item.id === this.ownerViewingUserId
             )
             : null;
 
-        if (!context || !name || !email) return;
-
         if (!profile) {
-            name.textContent = '';
-            email.textContent = '';
-            email.classList.add('hidden');
-            context.classList.add('hidden');
+            name?.replaceChildren();
+            email?.replaceChildren();
+            email?.classList.add('hidden');
+            context?.classList.add('hidden');
+            workspaceName?.replaceChildren();
+            workspaceEmail?.replaceChildren();
+            workspaceContext?.classList.add('hidden');
+            if (workspaceWelcomeName) {
+                workspaceWelcomeName.textContent = "Let's get started.";
+            }
+            if (workspaceWelcomeDescription) {
+                workspaceWelcomeDescription.textContent =
+                    'Choose an existing scheduling period or create a new one to begin building your schedule.';
+            }
             return;
         }
 
         const fullName = String(profile.full_name || '').trim();
         const profileEmail = String(profile.email || '').trim();
-        name.textContent = fullName || profileEmail || 'Unnamed user';
+        const displayName = fullName || profileEmail || 'Unnamed user';
+        if (name) name.textContent = displayName;
 
-        if (profileEmail) {
-            email.textContent = profileEmail;
-            email.classList.remove('hidden');
+        if (email) {
+            if (profileEmail) {
+                email.textContent = profileEmail;
+                email.classList.remove('hidden');
+            } else {
+                email.textContent = '';
+                email.classList.add('hidden');
+            }
         } else {
-            email.textContent = '';
-            email.classList.add('hidden');
+            email?.classList.add('hidden');
         }
 
-        context.classList.remove('hidden');
+        context?.classList.remove('hidden');
+        if (workspaceName) workspaceName.textContent = displayName;
+        if (workspaceEmail) {
+            workspaceEmail.textContent = profileEmail;
+            workspaceEmail.classList.toggle('hidden', !profileEmail);
+        }
+        workspaceContext?.classList.remove('hidden');
+        if (workspaceWelcomeName) {
+            workspaceWelcomeName.textContent = 'Choose a schedule period';
+        }
+        if (workspaceWelcomeDescription) {
+            workspaceWelcomeDescription.textContent =
+                "Select one of this user's periods to open their schedules.";
+        }
     }
 
     renderOwnerView() {
@@ -2676,18 +3137,41 @@ class ScheduleManager {
     async selectOwnerUser(id) {
         if (!this.isOwner) return;
         const requestId = ++this.ownerRequestId;
+        this.syncRequestId++;
+        this.periodRequestId++;
+        const periodRequestId = this.periodRequestId;
         this.ownerSelectedUserId = id;
         this.ownerViewingUserId = id;
+        this.pendingOwnerViewingUserId = null;
         sessionStorage.setItem('scheduleStudioOwnerUser', id);
         this.activeSchedulePeriod = null;
         this.term = '';
         this.schedulePeriods = [];
         this.schedules = [];
         this.ownerAllSchedules = [];
+        this.teachers = [];
+        this.subjects = [];
+        this.rooms = [];
+        this.courses = [];
+        this.buildings = [];
+        this.subjectDetails = {};
+        this.roomDetails = {};
+        document.getElementById('activeSchedulePeriodHeader')?.classList.add('hidden');
+        const periodHeader = document.getElementById('activeSchedulePeriodHeader');
+        if (periodHeader) periodHeader.textContent = '';
+        window.ScheduleStudioOwnerNavigation.setWorkspaceModes({
+            ownerMode: true,
+            ownerUserMode: false
+        });
+        window.ScheduleStudioOwnerNavigation.setBackButtonVisible(false);
+        this.renderOwnerSelectedUserContext();
 
-        await this.loadOwnerCatalog(id);
         await this.loadSchedulePeriods(id);
-        if (requestId !== this.ownerRequestId || this.ownerViewingUserId !== id) return;
+        if (
+            requestId !== this.ownerRequestId ||
+            periodRequestId !== this.periodRequestId ||
+            this.ownerViewingUserId !== id
+        ) return;
         this.clearScheduleForm();
         this.showWorkspaceScreen(true);
         this.renderWorkspacePeriods();
@@ -2702,8 +3186,21 @@ class ScheduleManager {
         this.schedulePeriods = [];
         this.activeSchedulePeriod = null;
         this.term = '';
+        this.pendingOwnerViewingUserId = null;
         this.ownerViewingUserId = null;
         this.ownerSelectedUserId = null;
+        this.teachers = [];
+        this.subjects = [];
+        this.rooms = [];
+        this.courses = [];
+        this.buildings = [];
+        this.subjectDetails = {};
+        this.roomDetails = {};
+        const periodHeader = document.getElementById('activeSchedulePeriodHeader');
+        if (periodHeader) {
+            periodHeader.textContent = '';
+            periodHeader.classList.add('hidden');
+        }
         this.renderOwnerSelectedUserContext();
         this.loadOwnerCatalog(this.currentUser?.id);
         sessionStorage.removeItem('scheduleStudioOwnerUser');
@@ -3207,8 +3704,10 @@ class ScheduleManager {
     }
 
     // Build a standalone element representing the teacher's load (landscape A4 style)
-    generateTeacherLoadElement(teacherName, term = null) {
-        const schedules = this.getTeacherSchedules(teacherName, term).slice().sort((a,b) => {
+    generateTeacherLoadElement(teacherName, term = null, schedulesOverride = null) {
+        const schedules = (Array.isArray(schedulesOverride)
+            ? schedulesOverride
+            : this.getTeacherSchedules(teacherName, term)).slice().sort((a,b) => {
             const dayOrder = { 'Monday':1,'Tuesday':2,'Wednesday':3,'Thursday':4,'Friday':5,'Saturday':6 };
             const d = (dayOrder[a.day] || 0) - (dayOrder[b.day] || 0);
             if (d !== 0) return d;
@@ -3429,7 +3928,7 @@ class ScheduleManager {
             <div style="margin-top:10px; font-size:12px;">
                 <div style="display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:8px;">
                     <div style="flex:1;">
-                        <div><strong>Name of Instructor</strong> &nbsp;&nbsp;&nbsp;&nbsp;: ${teacherName}</div>
+                        <div><strong>Name of Instructor</strong> &nbsp;&nbsp;&nbsp;&nbsp;: ${this.escapeHtml(teacherName)}</div>
                         <div style="margin-top:6px;"><strong>Effective Date</strong> &nbsp;&nbsp;&nbsp;&nbsp;: </div>
                     </div>
                     <div style="width:320px; text-align:right;">
@@ -5292,6 +5791,16 @@ class ScheduleManager {
                 return;
             }
 
+            if (event === 'INITIAL_SESSION' && session && !this.recoveryMode) {
+                this.currentUser = session.user;
+                if (this.activeAuthPortal !== 'scheduler') {
+                    this.updateTeacherPortalNavigation();
+                    return;
+                }
+                this.applySession(session);
+                return;
+            }
+
             // Supabase can refresh the token silently when the tab becomes active.
             // Do NOT reload the application or sync all data again.
             if (event === 'TOKEN_REFRESHED') {
@@ -5313,6 +5822,10 @@ class ScheduleManager {
                 return;
             }
 
+            if (event === 'SIGNED_OUT') {
+                this.activeAuthPortal = null;
+            }
+
             // Actual sign-in, sign-out, or initial authentication
             // continues through the normal session handling.
             this.applySession(session);
@@ -5322,7 +5835,15 @@ class ScheduleManager {
             if (this.recoveryMode) this.showPasswordRecovery();
             // onAuthStateChange emits INITIAL_SESSION. Do not let this slower
             // request overwrite a newer sign-in event with an old null result.
-            if (!this.authEventReceived) this.applySession(data && data.session);
+            if (!this.authEventReceived) {
+                const session = data && data.session;
+                if (session && !this.recoveryMode && this.activeAuthPortal !== 'scheduler') {
+                    this.currentUser = session.user;
+                    this.updateTeacherPortalNavigation();
+                } else {
+                    this.applySession(session);
+                }
+            }
         });
     }
 
@@ -5364,6 +5885,7 @@ class ScheduleManager {
 
     applySession(session) {
         const authScreen = document.getElementById('authScreen');
+        const landingScreen = document.getElementById('applicationLanding');
         const appShell = document.getElementById('appShell');
         const identity = document.getElementById('userIdentity');
         const signOutBtn = document.getElementById('signOutBtn');
@@ -5381,15 +5903,50 @@ class ScheduleManager {
             this.periodRequestId++;
             sessionStorage.removeItem('scheduleStudioOwnerUser');
         }
+        if (previousUserId !== this.currentUser?.id) {
+            this.teacherPortalRequestId++;
+        }
+        this.updateTeacherPortalNavigation();
 
         if (!session || this.recoveryMode) {
-            if (authScreen) authScreen.classList.remove('hidden');
+            this.teacherPortalRequestId++;
+            appShell?.classList.remove('teacher-portal-mode');
             if (appShell) appShell.classList.add('hidden');
+            landingScreen?.classList.add('hidden');
+            authScreen?.classList.add('hidden');
             this.showWorkspaceScreen(false);
             if (identity) identity.classList.add('hidden');
             if (signOutBtn) signOutBtn.classList.add('hidden');
+            if (this.recoveryMode) {
+                this.activeAuthPortal = 'scheduler';
+                authScreen?.classList.remove('hidden');
+            } else if (this.activeAuthPortal === 'teacher') {
+                if (this.isPublicTeacherPortal) {
+                    this.enterPublicTeacherPortal();
+                }
+            } else if (this.activeAuthPortal === 'scheduler') {
+                authScreen?.classList.remove('hidden');
+            } else {
+                landingScreen?.classList.remove('hidden');
+            }
             return;
         }
+        if (
+            this.isPublicTeacherPortal &&
+            session.user.id === this.teacherPortalAdminUserId
+        ) {
+            this.enterPublicTeacherPortal();
+            return;
+        }
+        if (this.isPublicTeacherPortal) {
+            this.teacherPortalScheduleRequestId++;
+            this.invalidateTeacherPortalAdminPeriodRequests();
+        }
+        this.activeAuthPortal = 'scheduler';
+        this.isPublicTeacherPortal = false;
+        this.renderTeacherPortalAdminPeriodControl();
+        appShell?.classList.remove('teacher-portal-mode');
+        landingScreen?.classList.add('hidden');
         if (!this.remoteEnabled && authScreen) {
             authScreen.classList.add('hidden');
         }
@@ -5436,6 +5993,421 @@ class ScheduleManager {
             window.ScheduleStudioOwnerNavigation.setBackButtonVisible(false);
         }
         this.syncFromRemote();
+    }
+
+    isTeacherPortalAdministrator() {
+        return this.currentUser?.id === this.teacherPortalAdminUserId;
+    }
+
+    invalidateTeacherPortalAdminPeriodRequests() {
+        this.teacherPortalAdminPeriodRequestId++;
+        this.teacherPortalAdminPeriodChangeRequestId++;
+        this.teacherPortalAdminPeriodsLoading = false;
+        this.teacherPortalAdminPeriodChanging = false;
+    }
+
+    updateTeacherPortalNavigation() {
+        const showEntry = this.isTeacherPortalAdministrator() &&
+            !this.isPublicTeacherPortal;
+        const showReturnToScheduler = this.isTeacherPortalAdministrator() &&
+            this.isPublicTeacherPortal;
+        ['openPublicTeacherPortalWorkspace', 'openPublicTeacherPortalApp']
+            .forEach(id => {
+                document.getElementById(id)?.classList.toggle('hidden', !showEntry);
+            });
+        document.getElementById('teacherProfileNavigation')
+            ?.classList.toggle('hidden', !showEntry);
+        document.getElementById('teacherPortalReturnToScheduler')
+            ?.classList.toggle('hidden', !showReturnToScheduler);
+    }
+
+    async enterPublicTeacherPortal() {
+        const authScreen = document.getElementById('authScreen');
+        const landingScreen = document.getElementById('applicationLanding');
+        const appShell = document.getElementById('appShell');
+        const workspaceScreen = document.getElementById('workspaceScreen');
+        const results = document.getElementById('teacherProfileResults');
+        if (!appShell) return;
+
+        if (!this.isPublicTeacherPortal && this.isTeacherPortalAdministrator()) {
+            this.teacherPortalReturnToWorkspace = Boolean(
+                workspaceScreen && !workspaceScreen.classList.contains('hidden')
+            );
+            this.teacherPortalReturnViewType =
+                document.querySelector('.toggle-btn[data-view].active')?.dataset.view ||
+                'teacher';
+            this.teacherPortalReturnSchedulerState = {
+                selectedTeacherProfile: this.selectedTeacherProfile,
+                teacherProfileTab: this.teacherProfileTab,
+                teacherProfileSearch: this.teacherProfileSearch
+            };
+        }
+        this.isPublicTeacherPortal = true;
+        this.activeAuthPortal = 'teacher';
+        this.updateTeacherPortalNavigation();
+        authScreen?.classList.add('hidden');
+        landingScreen?.classList.add('hidden');
+        document.getElementById('workspaceScreen')?.classList.add('hidden');
+        appShell.classList.add('teacher-portal-mode');
+        appShell.classList.remove('owner-mode', 'owner-user-mode', 'hidden');
+        document.getElementById('signOutBtn')?.classList.add('hidden');
+        document.getElementById('teacherProfileDirectory')?.classList.remove('hidden');
+        document.getElementById('teacherProfileDashboard')?.classList.add('hidden');
+        document.getElementById('teacherProfileBack')?.classList.add('hidden');
+        document.querySelectorAll('.view-content').forEach(view => view.classList.remove('active'));
+        document.getElementById('teacherProfileView')?.classList.add('active');
+        document.querySelectorAll('.toggle-btn[data-view]').forEach(button => {
+            button.classList.toggle('active', button.dataset.view === 'teacher-profile');
+        });
+        document.querySelector('.main-content')?.classList.add('all-view-active');
+
+        this.selectedTeacherProfile = null;
+        this.teacherProfileTab = 'load';
+        this.teacherPortalScheduleRequestId++;
+        this.teacherPortalDirectory = [];
+        this.teacherPortalSchedules = [];
+        this.teacherPortalScheduleLoading = false;
+        this.teacherPortalScheduleError = '';
+        this.teacherPortalActivePeriod = null;
+        this.teacherPortalPeriodLoadError = null;
+        this.teacherPortalAdminPeriods = [];
+        this.teacherPortalAdminPeriodsLoading = this.isTeacherPortalAdministrator();
+        this.teacherPortalAdminPeriodError = '';
+        this.teacherPortalAdminPeriodChanging = false;
+        this.teacherPortalAdminPeriodRequestId++;
+        this.teacherPortalAdminPeriodChangeRequestId++;
+        document.getElementById('teacherProfileName').textContent = '';
+        document.getElementById('teacherProfilePeriod').textContent = '';
+        document.getElementById('teacherProfileAmbiguity')?.classList.add('hidden');
+        document.getElementById('teacherProfileLoadPanel')?.replaceChildren();
+        document.getElementById('teacherProfileTimetablePanel')?.replaceChildren();
+        this.setTeacherPortalMessage('', '');
+        this.renderTeacherPortalAdminPeriodControl();
+        if (results) results.innerHTML = '<p class="empty-message">Loading teachers…</p>';
+
+        const requestId = ++this.teacherPortalRequestId;
+        if (this.isTeacherPortalAdministrator()) {
+            this.loadTeacherPortalAdminPeriods();
+        }
+        try {
+            if (!this.remoteEnabled || !this.supabase) {
+                throw new Error('Teacher Portal requires a Supabase connection.');
+            }
+
+            const [directoryResult, periodResult] = await Promise.all([
+                TeacherPortalDataService.fetchTeacherDirectory(this.supabase),
+                TeacherPortalDataService.fetchActivePeriod(this.supabase)
+            ]);
+            if (requestId !== this.teacherPortalRequestId || !this.isPublicTeacherPortal) return;
+
+            if (periodResult.error) {
+                this.teacherPortalPeriodLoadError = periodResult.error;
+                console.error('Teacher Portal active-period load failed:', periodResult.error);
+            } else {
+                const period = typeof periodResult.data === 'string'
+                    ? JSON.parse(periodResult.data)
+                    : periodResult.data;
+                this.teacherPortalActivePeriod = period && typeof period === 'object'
+                    ? {
+                        id: period.id,
+                        school_year: period.school_year,
+                        term: period.term
+                    }
+                    : null;
+            }
+            this.renderTeacherPortalAdminPeriodControl();
+
+            if (directoryResult.error) throw directoryResult.error;
+            const directory = typeof directoryResult.data === 'string'
+                ? JSON.parse(directoryResult.data)
+                : directoryResult.data;
+            if (!Array.isArray(directory)) {
+                throw new Error('The public teacher directory returned an invalid response.');
+            }
+
+            this.teacherPortalDirectory = directory
+                .filter(teacher => teacher && typeof teacher.name === 'string')
+                .map(teacher => {
+                    const key = this.normalizeTeacherName(teacher.name).toLowerCase();
+                    return {
+                        ...teacher,
+                        key,
+                        catalogRecordCount:
+                            Number(teacher.matching_teacher_records) || 0
+                    };
+                })
+                .filter(teacher => teacher.key);
+            this.renderTeacherProfileResults();
+        } catch (error) {
+            if (requestId !== this.teacherPortalRequestId) return;
+            console.error('Public Teacher Portal initialization failed:', error);
+            if (results) {
+                results.innerHTML = `<p class="empty-message">${this.escapeHtml(
+                    error.message || 'Unable to load the public teacher directory.'
+                )}</p>`;
+            }
+        }
+    }
+
+    async loadTeacherPortalAdminPeriods() {
+        const requestId = ++this.teacherPortalAdminPeriodRequestId;
+        this.teacherPortalAdminPeriodsLoading = true;
+        this.teacherPortalAdminPeriodError = '';
+        this.renderTeacherPortalAdminPeriodControl();
+        try {
+            const { data, error } =
+                await TeacherPortalDataService.fetchAdminPeriods(this.supabase);
+            if (
+                requestId !== this.teacherPortalAdminPeriodRequestId ||
+                !this.isPublicTeacherPortal ||
+                !this.isTeacherPortalAdministrator()
+            ) return;
+            if (error) throw error;
+
+            const periods = typeof data === 'string' ? JSON.parse(data) : data;
+            if (!Array.isArray(periods)) {
+                throw new Error('The administrator period request returned an invalid response.');
+            }
+            this.teacherPortalAdminPeriods = periods
+                .filter(period => period && period.id)
+                .map(period => ({
+                    id: period.id,
+                    school_year: period.school_year,
+                    term: period.term
+                }));
+        } catch (error) {
+            if (
+                requestId !== this.teacherPortalAdminPeriodRequestId ||
+                !this.isPublicTeacherPortal ||
+                !this.isTeacherPortalAdministrator()
+            ) return;
+            console.error('Teacher Portal administrator periods failed to load:', error);
+            this.teacherPortalAdminPeriodError =
+                error.message || 'Unable to load academic periods.';
+        } finally {
+            if (
+                requestId === this.teacherPortalAdminPeriodRequestId &&
+                this.isPublicTeacherPortal &&
+                this.isTeacherPortalAdministrator()
+            ) {
+                this.teacherPortalAdminPeriodsLoading = false;
+                this.renderTeacherPortalAdminPeriodControl();
+            }
+        }
+    }
+
+    renderTeacherPortalAdminPeriodControl() {
+        const control = document.getElementById('teacherPortalAdminPeriodControl');
+        const select = document.getElementById('teacherPortalAdminPeriodSelect');
+        const status = document.getElementById('teacherPortalAdminPeriodStatus');
+        if (!control || !select || !status) return;
+
+        const isAdmin = this.isPublicTeacherPortal &&
+            this.isTeacherPortalAdministrator();
+        control.classList.toggle('hidden', !isAdmin);
+        if (!isAdmin) return;
+
+        select.replaceChildren();
+        if (this.teacherPortalAdminPeriodsLoading) {
+            const option = document.createElement('option');
+            option.value = '';
+            option.textContent = 'Loading academic periods…';
+            select.appendChild(option);
+        } else if (!this.teacherPortalAdminPeriods.length) {
+            const option = document.createElement('option');
+            option.value = '';
+            option.textContent = this.teacherPortalAdminPeriodError
+                ? 'Periods unavailable'
+                : 'No academic periods available';
+            select.appendChild(option);
+        } else {
+            this.teacherPortalAdminPeriods.forEach(period => {
+                const option = document.createElement('option');
+                option.value = period.id;
+                option.textContent =
+                    `${period.school_year} • ${this.formatTermLabel(period.term)}`;
+                select.appendChild(option);
+            });
+        }
+
+        const activePeriodId = this.teacherPortalActivePeriod?.id || '';
+        select.value = this.teacherPortalAdminPeriods.some(
+            period => period.id === activePeriodId
+        ) ? activePeriodId : '';
+        select.disabled = this.teacherPortalAdminPeriodsLoading ||
+            this.teacherPortalAdminPeriodChanging ||
+            this.teacherPortalAdminPeriods.length === 0;
+        status.textContent = this.teacherPortalAdminPeriodChanging
+            ? 'Updating the active period…'
+            : this.teacherPortalAdminPeriodError ||
+                (this.teacherPortalAdminPeriodsLoading
+                    ? 'Loading available periods…'
+                    : this.teacherPortalAdminPeriods.length
+                        ? ''
+                        : 'No academic periods are available.');
+        status.classList.toggle('error', Boolean(this.teacherPortalAdminPeriodError));
+    }
+
+    async changeTeacherPortalActivePeriod(schedulePeriodId) {
+        if (
+            !this.isPublicTeacherPortal ||
+            !this.isTeacherPortalAdministrator() ||
+            this.teacherPortalAdminPeriodChanging ||
+            !this.teacherPortalAdminPeriods.some(
+                period => period.id === schedulePeriodId
+            ) ||
+            schedulePeriodId === this.teacherPortalActivePeriod?.id
+        ) {
+            this.renderTeacherPortalAdminPeriodControl();
+            return;
+        }
+
+        const requestId = ++this.teacherPortalAdminPeriodChangeRequestId;
+        this.teacherPortalAdminPeriodChanging = true;
+        this.teacherPortalAdminPeriodError = '';
+        this.renderTeacherPortalAdminPeriodControl();
+        try {
+            const { error } = await TeacherPortalDataService.setActivePeriod(
+                this.supabase,
+                schedulePeriodId
+            );
+            if (error) throw error;
+            if (
+                requestId !== this.teacherPortalAdminPeriodChangeRequestId ||
+                !this.isPublicTeacherPortal ||
+                !this.isTeacherPortalAdministrator()
+            ) return;
+
+            const activeResult =
+                await TeacherPortalDataService.fetchActivePeriod(this.supabase);
+            if (activeResult.error) throw activeResult.error;
+            const activePeriod = typeof activeResult.data === 'string'
+                ? JSON.parse(activeResult.data)
+                : activeResult.data;
+            if (!activePeriod || typeof activePeriod !== 'object' || !activePeriod.id) {
+                throw new Error('The active period could not be confirmed by the server.');
+            }
+            if (
+                requestId !== this.teacherPortalAdminPeriodChangeRequestId ||
+                !this.isPublicTeacherPortal ||
+                !this.isTeacherPortalAdministrator()
+            ) return;
+
+            this.teacherPortalActivePeriod = {
+                id: activePeriod.id,
+                school_year: activePeriod.school_year,
+                term: activePeriod.term
+            };
+            this.teacherPortalPeriodLoadError = null;
+            this.renderTeacherPortalAdminPeriodControl();
+            const selectedTeacher = this.selectedTeacherProfile;
+            if (selectedTeacher) {
+                await this.selectPublicTeacher(selectedTeacher, { preserveTab: true });
+            }
+        } catch (error) {
+            if (
+                requestId !== this.teacherPortalAdminPeriodChangeRequestId ||
+                !this.isPublicTeacherPortal ||
+                !this.isTeacherPortalAdministrator()
+            ) return;
+            console.error('Teacher Portal active-period update failed:', error);
+            this.teacherPortalAdminPeriodError =
+                error.message || 'Unable to update the active academic period.';
+        } finally {
+            if (
+                requestId === this.teacherPortalAdminPeriodChangeRequestId &&
+                this.isPublicTeacherPortal &&
+                this.isTeacherPortalAdministrator()
+            ) {
+                this.teacherPortalAdminPeriodChanging = false;
+                this.renderTeacherPortalAdminPeriodControl();
+            }
+        }
+    }
+
+    returnToSchedulerFromTeacherPortal() {
+        if (!this.isTeacherPortalAdministrator()) return;
+        this.teacherPortalRequestId++;
+        this.teacherPortalScheduleRequestId++;
+        this.invalidateTeacherPortalAdminPeriodRequests();
+        this.isPublicTeacherPortal = false;
+        this.activeAuthPortal = 'scheduler';
+        this.renderTeacherPortalAdminPeriodControl();
+        if (this.teacherPortalReturnSchedulerState) {
+            this.selectedTeacherProfile =
+                this.teacherPortalReturnSchedulerState.selectedTeacherProfile;
+            this.teacherProfileTab =
+                this.teacherPortalReturnSchedulerState.teacherProfileTab;
+            this.teacherProfileSearch =
+                this.teacherPortalReturnSchedulerState.teacherProfileSearch;
+            this.teacherPortalReturnSchedulerState = null;
+        }
+        this.updateTeacherPortalNavigation();
+        document.getElementById('appShell')?.classList.remove('teacher-portal-mode');
+        if (this.teacherPortalReturnToWorkspace) {
+            this.showWorkspaceScreen(true);
+        } else {
+            this.showScheduleStudio();
+            const returnButton = document.querySelector(
+                `.toggle-btn[data-view="${this.teacherPortalReturnViewType}"]`
+            );
+            if (returnButton) {
+                this.switchView({ target: returnButton });
+                if (this.teacherPortalReturnViewType === 'teacher-profile') {
+                    this.renderTeacherProfileView();
+                }
+            }
+        }
+    }
+
+    returnToStartingPageFromTeacherPortal() {
+        this.teacherPortalRequestId++;
+        this.teacherPortalScheduleRequestId++;
+        this.invalidateTeacherPortalAdminPeriodRequests();
+        this.isPublicTeacherPortal = false;
+        this.activeAuthPortal = null;
+        this.renderTeacherPortalAdminPeriodControl();
+        this.updateTeacherPortalNavigation();
+        document.getElementById('appShell')?.classList.remove('teacher-portal-mode');
+        document.getElementById('appShell')?.classList.add('hidden');
+        document.getElementById('workspaceScreen')?.classList.add('hidden');
+        document.getElementById('authScreen')?.classList.add('hidden');
+        document.getElementById('applicationLanding')?.classList.remove('hidden');
+    }
+
+    mapTeacherPortalSchedule(row) {
+        const parsed = this.parseCourseYear(row.course_year);
+        return {
+            id: row.id,
+            ownerId: row.owner_id,
+            schedulePeriodId: row.schedule_period_id || null,
+            combinedClassId: row.combined_class_id || null,
+            term: String(row.term || '').toLowerCase(),
+            program: this.normalizeProgram(row.program || parsed?.program || ''),
+            year: row.year || parsed?.year || null,
+            section: row.section || parsed?.section || '',
+            teacherName: String(row.teacher_name || ''),
+            subject: String(row.subject || '').toUpperCase(),
+            courseYear: this.normalizeCourseYear(row.course_year),
+            courseCode: String(row.course_code || '').toUpperCase(),
+            units: row.units,
+            lecHours: row.lec_hours,
+            labHours: row.lab_hours,
+            delivery: String(row.delivery || ''),
+            building: String(row.building || '').toUpperCase(),
+            overload: row.overload || '',
+            day: row.day || '',
+            startTime: row.start_time ? row.start_time.slice(0, 5) : '',
+            endTime: row.end_time ? row.end_time.slice(0, 5) : '',
+            room: String(row.room || '').toUpperCase()
+        };
+    }
+
+    setTeacherPortalMessage(message, type = '') {
+        const element = document.getElementById('teacherPortalMessage');
+        if (!element) return;
+        element.textContent = message;
+        element.className = `teacher-portal-message ${type}`;
     }
 
     toggleAuthMode() {
@@ -5569,8 +6541,11 @@ class ScheduleManager {
     }
 
     async loadSchedulePeriods(ownerId = this.currentUser?.id) {
+        const requestId = this.periodRequestId;
         if (!this.remoteEnabled || !this.supabase || !ownerId) {
-            this.schedulePeriods = [];
+            if (requestId === this.periodRequestId) {
+                this.schedulePeriods = [];
+            }
             return [];
         }
 
@@ -5579,6 +6554,16 @@ class ScheduleManager {
                 this.supabase,
                 ownerId
             );
+
+        const activeScopeId =
+            this.ownerViewingUserId ||
+            (!this.isOwner ? this.currentUser?.id : null);
+        if (
+            requestId !== this.periodRequestId ||
+            (activeScopeId && activeScopeId !== ownerId)
+        ) {
+            return [];
+        }
 
         if (error) {
             console.warn(
@@ -5589,9 +6574,9 @@ class ScheduleManager {
             return [];
         }
 
-        const activeScopeId = this.ownerViewingUserId || (!this.isOwner ? this.currentUser?.id : null);
-        if (activeScopeId && activeScopeId !== ownerId) return [];
-        this.schedulePeriods = Array.isArray(data) ? data : [];
+        this.schedulePeriods = Array.isArray(data)
+            ? data.filter(period => period.owner_id === ownerId)
+            : [];
 
         return this.schedulePeriods;
     }
@@ -5797,7 +6782,6 @@ class ScheduleManager {
 
                 periodHeader.classList.remove('hidden');
             }
-
             this.term = activePeriod.term;
 
             return activePeriod;
@@ -5813,36 +6797,41 @@ class ScheduleManager {
             return false;
         }
 
-        const exists = this.schedulePeriods.some(
-            item => item.id === period.id
+        const selectedOwnerId =
+            this.isOwner && this.ownerViewingUserId
+                ? this.ownerViewingUserId
+                : null;
+        const activePeriod = this.schedulePeriods.find(item =>
+            item.id === period.id &&
+            (!selectedOwnerId || item.owner_id === selectedOwnerId)
         );
 
-        if (!exists) {
+        if (!activePeriod) {
             return false;
         }
 
-        if (this.activeSchedulePeriod?.id !== period.id) {
+        if (this.activeSchedulePeriod?.id !== activePeriod.id) {
             this.periodRequestId++;
             this.schedules = [];
             this.ownerAllSchedules = [];
         }
         if (this.pagination) this.resetPage('teacher');
 
-        this.activeSchedulePeriod = period;
-        this.term = period.term;
-        this.schoolYear = period.school_year;
+        this.activeSchedulePeriod = activePeriod;
+        this.term = activePeriod.term;
+        this.schoolYear = activePeriod.school_year;
         const periodHeader =
             document.getElementById('activeSchedulePeriodHeader');
 
         if (periodHeader) {
             periodHeader.textContent =
-                `${period.school_year} • ${this.formatTermLabel(period.term)}`;
+                `${activePeriod.school_year} • ${this.formatTermLabel(activePeriod.term)}`;
 
             periodHeader.classList.remove('hidden');
         }
 
         const ownerId =
-            period.owner_id ||
+            activePeriod.owner_id ||
             this.ownerViewingUserId ||
             this.currentUser?.id;
 
@@ -5854,7 +6843,7 @@ class ScheduleManager {
 
             sessionStorage.setItem(
                 this.getActivePeriodSessionKey(ownerId),
-                period.id
+                activePeriod.id
             );
         }
 
@@ -5872,6 +6861,9 @@ class ScheduleManager {
     }
 
     getCurrentSchoolYear() {
+        if (this.isPublicTeacherPortal) {
+            return this.teacherPortalActivePeriod?.school_year || '';
+        }
         return this.activeSchedulePeriod?.school_year || this.schoolYear || '';
     }
 
@@ -5881,8 +6873,18 @@ class ScheduleManager {
 
         if (!list) return;
 
-        if (!Array.isArray(this.schedulePeriods) ||
-            this.schedulePeriods.length === 0) {
+        this.renderOwnerSelectedUserContext();
+        const selectedOwnerId =
+            this.isOwner && this.ownerViewingUserId
+                ? this.ownerViewingUserId
+                : null;
+        const periods = Array.isArray(this.schedulePeriods)
+            ? this.schedulePeriods.filter(period =>
+                !selectedOwnerId || period.owner_id === selectedOwnerId
+            )
+            : [];
+
+        if (!periods.length) {
 
             list.innerHTML = `
                 <p class="empty-message">
@@ -5893,7 +6895,7 @@ class ScheduleManager {
             return;
         }
 
-        list.innerHTML = this.schedulePeriods.map(period => `
+        list.innerHTML = periods.map(period => `
             <div class="workspace-period-card">
                 <div class="workspace-period-info">
                     <p class="workspace-period-school-year">
@@ -5920,26 +6922,54 @@ class ScheduleManager {
                     const periodId = button.dataset.periodId;
 
                     const period =
-                        this.schedulePeriods.find(
+                        periods.find(
                             item => item.id === periodId
                         );
 
                     if (!period) return;
 
-                    this.setActiveSchedulePeriod(period);
+                    const selectedUserId =
+                        this.isOwner ? this.ownerViewingUserId : null;
+                    if (
+                        (selectedUserId && period.owner_id !== selectedUserId) ||
+                        !this.setActiveSchedulePeriod(period)
+                    ) return;
                     this.schoolYear = period.school_year;
 
                     if (this.isOwner && this.ownerViewingUserId) {
+                        const ownerRequestId = this.ownerRequestId;
+                        const selectedPeriodId = period.id;
+                        const selectedPeriodRequestId = this.periodRequestId;
+                        await this.loadOwnerCatalog(selectedUserId);
+                        if (
+                            ownerRequestId !== this.ownerRequestId ||
+                            this.ownerViewingUserId !== selectedUserId ||
+                            this.activeSchedulePeriod?.id !== selectedPeriodId ||
+                            this.periodRequestId !== selectedPeriodRequestId
+                        ) return;
+
+                        const scheduleRefresh =
+                            this.refreshSchedulesForActivePeriod();
+                        const scheduleRequestId = this.periodRequestId;
+                        await scheduleRefresh;
+                        if (
+                            ownerRequestId !== this.ownerRequestId ||
+                            this.ownerViewingUserId !== selectedUserId ||
+                            this.activeSchedulePeriod?.id !== selectedPeriodId ||
+                            this.periodRequestId !== scheduleRequestId
+                        ) return;
+
                         window.ScheduleStudioOwnerNavigation.showSelectedUserWorkspace({
                             showBackButton: true
                         });
                         this.renderOwnerSelectedUserContext();
+                        this.clearScheduleForm();
+                        this.render();
+                        this.showScheduleStudio();
+                        return;
                     }
 
-                    localStorage.setItem(
-                        this.storageKey('schoolYear'),
-                        period.school_year
-                    );
+                    localStorage.setItem(this.storageKey('schoolYear'), period.school_year);
 
                     this.clearScheduleForm();
                     this.showScheduleStudio();
@@ -5952,6 +6982,11 @@ class ScheduleManager {
 
     async handleCreateSchedulePeriod(event) {
         event.preventDefault();
+        const requestOwnerId =
+            this.ownerViewingUserId ||
+            this.currentUser?.id;
+        const requestOwnerIdToken = this.ownerRequestId;
+        const requestPeriodIdToken = this.periodRequestId;
 
         const schoolYearInput =
             document.getElementById('schedulePeriodSchoolYear');
@@ -6034,6 +7069,15 @@ class ScheduleManager {
                 }
             );
 
+        if (
+            requestOwnerIdToken !== this.ownerRequestId ||
+            requestPeriodIdToken !== this.periodRequestId ||
+            requestOwnerId !==
+                (this.ownerViewingUserId || this.currentUser?.id)
+        ) {
+            return;
+        }
+
         if (error) {
             console.error(
                 'Schedule period creation error:',
@@ -6065,10 +7109,12 @@ class ScheduleManager {
 
         this.schoolYear = data.school_year;
 
-        localStorage.setItem(
-            this.storageKey('schoolYear'),
-            data.school_year
-        );
+        if (!(this.isOwner && this.ownerViewingUserId)) {
+            localStorage.setItem(
+                this.storageKey('schoolYear'),
+                data.school_year
+            );
+        }
 
         const schedulePeriodModal =
             document.getElementById('schedulePeriodModal');
@@ -6082,16 +7128,38 @@ class ScheduleManager {
         }
 
         if (this.isOwner && this.ownerViewingUserId) {
+            const selectedOwnerId = this.ownerViewingUserId;
+            const selectedPeriodId = data.id;
+            const ownerRequestId = this.ownerRequestId;
+            await this.loadOwnerCatalog(selectedOwnerId);
+            if (
+                ownerRequestId !== this.ownerRequestId ||
+                this.ownerViewingUserId !== selectedOwnerId ||
+                this.activeSchedulePeriod?.id !== selectedPeriodId
+            ) return;
+
+            const scheduleRefresh =
+                this.refreshSchedulesForActivePeriod();
+            const scheduleRequestId = this.periodRequestId;
+            await scheduleRefresh;
+            if (
+                ownerRequestId !== this.ownerRequestId ||
+                this.ownerViewingUserId !== selectedOwnerId ||
+                this.activeSchedulePeriod?.id !== selectedPeriodId ||
+                this.periodRequestId !== scheduleRequestId
+            ) return;
+
             window.ScheduleStudioOwnerNavigation.showSelectedUserWorkspace({
                 showBackButton: true
             });
             this.renderOwnerSelectedUserContext();
+            this.render();
+            this.showScheduleStudio();
+        } else {
+            this.showScheduleStudio();
+            this.render();
+            if (await this.refreshSchedulesForActivePeriod()) this.render();
         }
-
-        this.showScheduleStudio();
-
-        this.render();
-        if (await this.refreshSchedulesForActivePeriod()) this.render();
 
         this.showNotification(
             `${data.school_year} • ${this.formatTermLabel(data.term)} is now active.`,
@@ -6222,6 +7290,9 @@ class ScheduleManager {
     }
 
     changeSchedulePeriod() {
+        if (this.isOwner && this.ownerViewingUserId) {
+            this.ownerRequestId++;
+        }
         const ownerId =
             this.ownerViewingUserId ||
             this.currentUser?.id;
@@ -6239,6 +7310,14 @@ class ScheduleManager {
         this.ownerAllSchedules = [];
         this.clearScheduleForm();
 
+        if (this.isOwner && this.ownerViewingUserId) {
+            window.ScheduleStudioOwnerNavigation.setWorkspaceModes({
+                ownerMode: true,
+                ownerUserMode: false
+            });
+            window.ScheduleStudioOwnerNavigation.setBackButtonVisible(false);
+            this.renderOwnerSelectedUserContext();
+        }
         this.showWorkspaceScreen(true);
         this.renderWorkspacePeriods();
     }

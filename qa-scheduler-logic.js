@@ -40,6 +40,22 @@ manager.activeSchedulePeriod = { id: 'period-1', term: '1st semester' };
 manager.term = '1st semester';
 manager.schoolYear = '2026–2027';
 manager.curriculumCatalog = [];
+manager.teachers = ['  Jane   Doe ', 'JANE DOE', 'Mary Smith', 'Ann Smith'];
+manager.schedules = [
+    { teacherName: 'John  Smith', term: '1st semester' },
+    { teacherName: 'Unlisted Teacher' }
+];
+const janeMatches = manager.getTeacherDirectoryEntries(' jane   dO ');
+const surnameMatches = manager.getTeacherDirectoryEntries('sMiTh');
+if (
+    janeMatches.length !== 1 ||
+    janeMatches[0].catalogRecordCount !== 2 ||
+    surnameMatches.length !== 3 ||
+    manager.getTeacherProfileSchedules('john smith').length !== 1 ||
+    manager.getTeacherDirectoryEntries('no match').length !== 0
+) {
+    throw new Error('Teacher directory search must normalize whitespace and case, match partial names, and group identical-name records.');
+}
 
 const row = (overrides = {}) => ({
     id: crypto.randomUUID(),
@@ -125,22 +141,17 @@ const standardThreeHourEntry = {
     labHours: 0,
     delivery: 'lec'
 };
+const ineligibleReviewEntries = [
+    { ...standardThreeHourEntry, name: 'CE Review 1', program: 'BSCS' },
+    { ...standardThreeHourEntry, name: 'CE Review 1', year: 3 },
+    { ...standardThreeHourEntry, name: 'CE Review 2', term: 'summer' },
+    { ...standardThreeHourEntry, name: 'CE Review 3' }
+];
 if (
     manager.getCurriculumEntryRequiredWeeklyMinutes(standardThreeHourEntry) !== 180 ||
-    manager.getCurriculumEntryRequiredWeeklyMinutes({
-        ...standardThreeHourEntry,
-        name: 'CE Review 1',
-        year: 3
-    }) !== 180 ||
-    manager.getCurriculumEntryRequiredWeeklyMinutes({
-        ...standardThreeHourEntry,
-        name: 'CE Review 2',
-        term: 'summer'
-    }) !== 180 ||
-    manager.getCurriculumEntryRequiredWeeklyMinutes({
-        ...standardThreeHourEntry,
-        name: 'CE Review 3'
-    }) !== 180
+    ineligibleReviewEntries.some(entry =>
+        manager.getCurriculumEntryRequiredWeeklyMinutes(entry) !== 180
+    )
 ) {
     throw new Error('The Review capacity exception affected an ineligible or normal subject.');
 }

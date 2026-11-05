@@ -16,6 +16,7 @@ A simple web application for managing teacher schedules with automatic conflict 
 
 ✅ **Multiple Views**:
 - **Teacher View**: See all schedules grouped by teacher with conflict warnings
+- **Teacher Portal**: Browse teachers without logging in and view their teaching load and timetable for the centrally active academic period
 - **All Schedules View**: See all schedules in a sortable list
 
 ✅ **Conflict Highlighting** - Conflicting schedules are highlighted in red for easy identification
@@ -67,6 +68,12 @@ A simple web application for managing teacher schedules with automatic conflict 
    - Click the **"Delete"** button next to any schedule
    - Confirm the deletion when prompted
    - The schedule will be removed and other schedules will update automatically
+
+### Teacher Portal
+- Anyone can open the public Teacher Portal from the landing page without logging in.
+- Search for a teacher by name and select a result to view that teacher's Teaching Load and timetable.
+- The displayed assignments use the centrally active academic period.
+- Only the designated administrator can change the active academic period in the public Teacher Portal.
 
 ## Time Range
 

@@ -8,7 +8,29 @@
     <link rel="icon" href="assets/schedule-studio-mark.svg" type="image/svg+xml">
 </head>
 <body>
-    <main id="authScreen" class="auth-screen" aria-live="polite">
+    <main id="applicationLanding" class="auth-screen" aria-labelledby="landingTitle">
+        <section class="auth-card portal-landing-card">
+            <div class="auth-form-panel portal-landing-panel">
+                <div class="auth-brand">
+                    <img class="auth-brand-mark" src="assets/schedule-studio-mark.svg" alt="">
+                    <div class="auth-brand-copy">
+                        <p class="auth-brand-name">SCHEDULE STUDIO</p>
+                        <p class="auth-kicker">YOUR SCHEDULING WORKSPACE</p>
+                    </div>
+                </div>
+                <div class="auth-intro">
+                    <h1 id="landingTitle">Welcome to Schedule Studio</h1>
+                    <p>Choose how you would like to continue.</p>
+                </div>
+                <div class="portal-landing-actions">
+                    <button id="openSchedulerLogin" class="btn-add" type="button">Scheduler <span>→</span></button>
+                    <button id="openTeacherPortalLogin" class="btn-clear" type="button">Teacher Portal <span>→</span></button>
+                </div>
+            </div>
+        </section>
+    </main>
+
+    <main id="authScreen" class="auth-screen hidden" aria-live="polite">
         <section class="auth-card">
             <div class="auth-form-panel">
                 <div class="auth-brand">
@@ -19,7 +41,7 @@
                     </div>
                 </div>
                 <div class="auth-intro">
-                    <h1 id="authTitle">Welcome back</h1>
+                    <h1 id="authTitle"></h1>
                     <p id="authSubtitle"></p>
                 </div>
                 <form id="authForm" class="auth-form">
@@ -113,6 +135,11 @@
             </aside>
 
             <section class="workspace-selection" aria-label="Scheduling period selection">
+                <div id="workspaceOwnerContext" class="workspace-owner-context hidden" aria-live="polite">
+                    <p class="workspace-owner-label">OWNER VIEWING</p>
+                    <p id="workspaceOwnerName" class="workspace-owner-name"></p>
+                    <p id="workspaceOwnerEmail" class="workspace-owner-email"></p>
+                </div>
                 <div class="workspace-welcome">
                     <h2 id="workspaceWelcomeName">Let's get started.</h2>
                     <p>
@@ -120,6 +147,9 @@
                         to begin building your schedule.
                     </p>
                 </div>
+                <p id="teacherPortalActivePeriodHint" class="teacher-portal-active-period-hint hidden">
+                    Opening a period here also sets the academic period shown to all Teacher Portal accounts.
+                </p>
 
                 <div class="workspace-actions">
                     <button
@@ -127,6 +157,12 @@
                         id="createSchedulePeriodBtn"
                         class="btn-add">
                         + Create New Scheduling Period
+                    </button>
+                    <button
+                        type="button"
+                        id="openPublicTeacherPortalWorkspace"
+                        class="btn-clear open-public-teacher-portal hidden">
+                        Open Public Teacher Portal →
                     </button>
                 </div>
 
@@ -157,11 +193,18 @@
             <p class="sidebar-section-label">WORKSPACE</p>
             <nav class="view-toggle main-navigation" aria-label="Workspace views">
                 <button class="toggle-btn active" data-view="teacher">DRAFT SCHEDULE</button>
+                <button id="teacherProfileNavigation" class="toggle-btn hidden" data-view="teacher-profile">TEACHER VIEW</button>
                 <button class="toggle-btn" data-view="manage">MANAGE LISTS</button>
                 <button class="toggle-btn" data-view="all">TEACHERS SCHEDULE</button>
                 <button class="toggle-btn" data-view="students">STUDENTS SCHEDULE</button>
                 <button class="toggle-btn" data-view="rooms">ROOM ASSIGNMENT</button>
             </nav>
+            <button
+                type="button"
+                id="openPublicTeacherPortalApp"
+                class="btn-clear open-public-teacher-portal hidden">
+                Open Public Teacher Portal →
+            </button>
             <section class="sidebar-period" aria-label="Active scheduling period">
                 <p class="sidebar-section-label">ACTIVE PERIOD</p>
                 <div
@@ -335,6 +378,66 @@
                     <div id="allSchedules" class="all-schedules">
                         <p class="empty-message">No schedules yet. Add one to get started!</p>
                     </div>
+                </div>
+
+                <div id="teacherProfileView" class="view-content">
+                    <header class="teacher-portal-app-header">
+                        <div class="teacher-portal-app-brand">
+                            <img src="assets/schedule-studio-mark.svg" alt="" class="teacher-portal-app-mark">
+                            <div>
+                                <p class="teacher-portal-app-name">SCHEDULE STUDIO</p>
+                                <p class="teacher-portal-app-label">Teacher Portal</p>
+                            </div>
+                        </div>
+                        <nav class="teacher-portal-public-navigation" aria-label="Teacher Portal navigation">
+                            <button id="teacherProfileBack" class="teacher-profile-header-back hidden" type="button">← Back to Teacher Search</button>
+                            <button id="teacherPortalBackToLanding" class="btn-clear" type="button">
+                                ← Back
+                            </button>
+                            <button id="teacherPortalReturnToScheduler" class="btn-clear hidden" type="button">
+                                ← Back to Scheduler
+                            </button>
+                        </nav>
+                    </header>
+                    <section id="teacherProfileDirectory" aria-labelledby="teacherProfileTitle">
+                        <div class="view-heading teacher-profile-heading">
+                            <div>
+                                <p class="eyebrow">READ-ONLY DIRECTORY</p>
+                                <h2 id="teacherProfileTitle">TEACHER VIEW</h2>
+                            </div>
+                        </div>
+                        <label class="teacher-profile-search">
+                            <span>Search by first or last name</span>
+                            <input id="teacherProfileSearch" type="search" placeholder="Enter a teacher name" autocomplete="off">
+                        </label>
+                        <div id="teacherProfileResults" class="teacher-profile-results" aria-live="polite">
+                            <p class="empty-message">Loading teachers…</p>
+                        </div>
+                        <div id="teacherProfilePagination" class="teacher-profile-pagination hidden" role="status" aria-live="polite"></div>
+                    </section>
+
+                    <section id="teacherProfileDashboard" class="hidden" aria-labelledby="teacherProfileName">
+                        <div class="teacher-profile-dashboard-heading">
+                            <p class="eyebrow">TEACHER DASHBOARD</p>
+                            <h2 id="teacherProfileName"></h2>
+                            <p class="teacher-profile-period">Current academic period: <strong id="teacherProfilePeriod"></strong></p>
+                            <div id="teacherPortalAdminPeriodControl" class="teacher-portal-admin-period hidden">
+                                <label for="teacherPortalAdminPeriodSelect">Set Teacher Portal academic period</label>
+                                <select id="teacherPortalAdminPeriodSelect" disabled>
+                                    <option value="">Loading academic periods…</option>
+                                </select>
+                                <p id="teacherPortalAdminPeriodStatus" role="status" aria-live="polite"></p>
+                            </div>
+                            <p id="teacherProfileAmbiguity" class="teacher-profile-ambiguity hidden"></p>
+                            <p id="teacherPortalMessage" class="teacher-portal-message" role="status" aria-live="polite"></p>
+                        </div>
+                        <div class="teacher-profile-tabs" role="tablist" aria-label="Teacher dashboard sections">
+                            <button id="teacherProfileLoadTab" class="teacher-profile-tab active" type="button" role="tab" aria-selected="true" aria-controls="teacherProfileLoadPanel" data-teacher-profile-tab="load">Teaching Load</button>
+                            <button id="teacherProfileTimetableTab" class="teacher-profile-tab" type="button" role="tab" aria-selected="false" aria-controls="teacherProfileTimetablePanel" data-teacher-profile-tab="timetable">Timetable</button>
+                        </div>
+                        <div id="teacherProfileLoadPanel" class="teacher-profile-panel active" role="tabpanel" aria-labelledby="teacherProfileLoadTab"></div>
+                        <div id="teacherProfileTimetablePanel" class="teacher-profile-panel" role="tabpanel" aria-labelledby="teacherProfileTimetableTab" hidden></div>
+                    </section>
                 </div>
 
                 <!-- Student Schedule View -->
@@ -605,6 +708,7 @@
     <script src="js/services/catalog-data.js"></script>
     <script src="js/services/profile-data.js"></script>
     <script src="js/services/schedule-period-data.js"></script>
+    <script src="js/services/teacher-portal-data.js"></script>
     <script src="script.js"></script>
 </body>
 </html>

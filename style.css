@@ -1779,6 +1779,41 @@ body, .container { background-color:#f5f6f8; }
     margin-bottom: 26px;
 }
 
+#workspaceScreen .workspace-owner-context {
+    margin-bottom: 24px;
+    padding: 14px 16px;
+    border: 1px solid #f0dfd2;
+    border-left: 4px solid #d9815b;
+    border-radius: 12px;
+    background: #fff8f3;
+}
+
+#workspaceScreen .workspace-owner-context p {
+    margin: 0;
+}
+
+#workspaceScreen .workspace-owner-label {
+    margin-bottom: 5px !important;
+    color: #9e5b40;
+    font-size: .68rem;
+    font-weight: 800;
+    letter-spacing: .1em;
+}
+
+#workspaceScreen .workspace-owner-name {
+    color: #35312f;
+    font-size: 1rem;
+    font-weight: 750;
+    overflow-wrap: anywhere;
+}
+
+#workspaceScreen .workspace-owner-email {
+    margin-top: 3px !important;
+    color: #7b706a;
+    font-size: .85rem;
+    overflow-wrap: anywhere;
+}
+
 #workspaceScreen .workspace-welcome .eyebrow,
 #workspaceScreen .workspace-section-heading .eyebrow {
     margin: 0 0 9px;
@@ -1962,6 +1997,249 @@ body, .container { background-color:#f5f6f8; }
     #workspaceScreen .workspace-period-card {
         gap: 16px;
         padding: 18px;
+    }
+}
+
+#applicationLanding.auth-screen {
+    position: fixed;
+    inset: 0;
+    z-index: 22;
+    width: 100%;
+    min-height: 100vh;
+    min-height: 100svh;
+    padding: clamp(16px, 4vw, 56px);
+    overflow-y: auto;
+    background:
+        radial-gradient(ellipse at 7% 8%, rgba(255,255,255,.38), transparent 27rem),
+        radial-gradient(ellipse at 90% 88%, rgba(239,129,94,.18), transparent 30rem),
+        #f7d4bd;
+}
+
+#applicationLanding .portal-landing-card {
+    width: min(620px, 100%);
+    margin: auto;
+    padding: 14px;
+    border: 1px solid rgba(255,255,255,.78);
+    border-radius: 30px;
+    background: #fff9f1;
+    box-shadow: 0 30px 90px rgba(123,69,47,.18);
+    text-align: left;
+}
+
+#applicationLanding .portal-landing-panel {
+    padding: clamp(28px, 6vw, 64px);
+}
+
+#applicationLanding .auth-brand {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    margin-bottom: 34px;
+}
+
+#applicationLanding .auth-brand-mark {
+    flex: 0 0 auto;
+    width: 62px;
+    height: 62px;
+}
+
+#applicationLanding .auth-brand-copy {
+    display: grid;
+    gap: 5px;
+    min-width: 0;
+}
+
+#applicationLanding .auth-brand-name {
+    margin: 0;
+    color: #35312f;
+    font-size: 1.3rem;
+    font-weight: 850;
+    letter-spacing: .045em;
+}
+
+#applicationLanding .auth-kicker,
+#applicationLanding .auth-intro {
+    margin-bottom: 24px;
+    text-align: left;
+}
+
+#applicationLanding .auth-intro h1 {
+    margin: 0 0 9px;
+    color: #302e2c;
+    font-size: clamp(2rem, 3.8vw, 2.65rem);
+    font-weight: 780;
+    letter-spacing: -.055em;
+    line-height: 1.08;
+}
+
+#applicationLanding .auth-intro p {
+    margin: 0;
+    color: #82766f;
+    line-height: 1.55;
+}
+
+#applicationLanding .portal-landing-actions {
+    display: grid;
+    gap: 12px;
+    margin-top: 30px;
+}
+
+#applicationLanding .portal-landing-actions button {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    box-sizing: border-box;
+    width: 100%;
+    height: 58px;
+    min-height: 58px;
+    margin: 0;
+    padding: 0 20px;
+    border: 1px solid transparent;
+    border-radius: 12px;
+    font-size: 1rem;
+    font-weight: 700;
+    line-height: 1.25;
+    text-align: left;
+    transition: transform .18s ease, box-shadow .18s ease, background-color .18s ease, border-color .18s ease;
+}
+
+#applicationLanding .portal-landing-actions #openSchedulerLogin {
+    border-color: #b96a4d;
+    background: #b96a4d;
+    color: #fff;
+    box-shadow: 0 3px 8px rgba(139, 73, 49, .15);
+}
+
+#applicationLanding .portal-landing-actions #openTeacherPortalLogin {
+    border-color: #e8cbbb;
+    background: #fffdf9;
+    color: #594238;
+    box-shadow: 0 2px 6px rgba(110, 75, 58, .06);
+}
+
+#applicationLanding .portal-landing-actions button span {
+    flex: 0 0 auto;
+    margin-left: 16px;
+    color: #b96a4d;
+    font-size: 1.25rem;
+    line-height: 1;
+}
+
+#applicationLanding .portal-landing-actions #openSchedulerLogin span {
+    color: #fff;
+}
+
+#applicationLanding .portal-landing-actions #openSchedulerLogin:hover {
+    transform: translateY(-1px);
+    border-color: #a85b40;
+    background: #a85b40;
+    box-shadow: 0 6px 14px rgba(139, 73, 49, .2);
+}
+
+#applicationLanding .portal-landing-actions #openTeacherPortalLogin:hover {
+    transform: translateY(-1px);
+    border-color: #d9b29f;
+    background: #fff8f2 !important;
+    color: #594238 !important;
+    box-shadow: 0 5px 12px rgba(110, 75, 58, .1);
+}
+
+#applicationLanding .portal-landing-actions button:focus-visible {
+    outline: 3px solid #d99070;
+    outline-offset: 3px;
+    box-shadow: 0 0 0 2px #fff9f1, 0 0 0 5px rgba(185, 106, 77, .35);
+}
+
+#applicationLanding .portal-landing-actions button:active {
+    transform: translateY(0);
+}
+
+.teacher-portal-active-period-hint {
+    margin: 18px 0;
+    padding: 12px 14px;
+    border: 1px solid #f0dfd2;
+    border-left: 4px solid #d9815b;
+    border-radius: 9px;
+    background: #fff8f3;
+    color: #795642;
+    font-size: .84rem;
+    line-height: 1.5;
+}
+
+#appShell.teacher-portal-mode {
+    display: block;
+    min-height: 100vh;
+    padding: clamp(12px, 3vw, 24px);
+}
+
+#appShell.teacher-portal-mode > .app-sidebar,
+#appShell.teacher-portal-mode > .dashboard,
+#appShell.teacher-portal-mode .form-panel {
+    display: none !important;
+}
+
+#appShell.teacher-portal-mode > .main-content {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    width: min(1120px, 100%);
+    margin: 0 auto;
+    padding: 0;
+}
+
+#appShell.teacher-portal-mode .display-panel {
+    padding: clamp(16px, 3vw, 30px);
+    border: 1px solid #eee4dc;
+    border-radius: 20px;
+    background: #fff;
+    box-shadow: 0 14px 40px rgba(65,49,38,.07);
+}
+
+#appShell.teacher-portal-mode #teacherProfileView {
+    display: block;
+}
+
+#appShell.teacher-portal-mode .teacher-profile-dashboard-heading {
+    margin-bottom: 20px;
+}
+
+#appShell.teacher-portal-mode .teacher-portal-message {
+    min-height: 1.3em;
+    margin: 12px 0 0;
+    color: #667085;
+    font-size: .86rem;
+    line-height: 1.5;
+}
+
+#appShell.teacher-portal-mode .teacher-portal-message.error {
+    color: #b42318;
+}
+
+#appShell.teacher-portal-mode #teacherProfileAmbiguity {
+    display: block;
+}
+
+@media (max-width: 760px) {
+    #appShell.teacher-portal-mode {
+        padding: 10px;
+    }
+
+    #appShell.teacher-portal-mode .display-panel {
+        padding: 14px 12px;
+    }
+}
+
+@media (max-width: 480px) {
+    #applicationLanding.auth-screen {
+        padding: 10px;
+    }
+
+    #applicationLanding .portal-landing-card {
+        padding: 7px;
+        border-radius: 22px;
+    }
+
+    #applicationLanding .portal-landing-panel {
+        padding: 24px 18px;
     }
 }
 
@@ -4774,4 +5052,470 @@ body {
 #appShell.owner-mode:not(.owner-user-mode) > .dashboard,
 #appShell.owner-mode:not(.owner-user-mode) > .main-content {
     grid-column: 1;
+}
+
+#appShell #teacherProfileView {
+    width: 100%;
+    min-width: 0;
+}
+
+#appShell .teacher-profile-heading {
+    margin-bottom: 20px;
+}
+
+#appShell .teacher-profile-search {
+    display: grid;
+    gap: 8px;
+    width: min(100%, 560px);
+    margin-bottom: 20px;
+    color: #665d56;
+    font-size: .86rem;
+    font-weight: 700;
+}
+
+#appShell .teacher-profile-search input {
+    width: 100%;
+    min-height: 46px;
+    padding: 11px 13px;
+    border: 1px solid #e6d9ce;
+    border-radius: 10px;
+    background: #fff;
+    color: #35312f;
+    font: inherit;
+}
+
+#appShell .teacher-profile-search input:focus {
+    outline: 3px solid rgba(217, 129, 91, .2);
+    border-color: #d9815b;
+}
+
+#appShell .teacher-profile-results {
+    display: grid;
+    gap: 10px;
+}
+
+#appShell .teacher-profile-pagination {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: 12px 16px;
+    margin-top: 16px;
+    color: #746961;
+    font-size: .82rem;
+}
+
+#appShell .teacher-profile-results-summary {
+    margin: 0;
+}
+
+#appShell .teacher-profile-pagination-controls {
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    flex-wrap: wrap;
+    gap: 5px;
+}
+
+#appShell .teacher-profile-page-step,
+#appShell .teacher-profile-page-number {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 40px;
+    min-height: 40px;
+    padding: 7px 10px;
+    border: 1px solid #e8d8cd;
+    border-radius: 9px;
+    background: #fff;
+    color: #765343;
+    font: inherit;
+    font-weight: 650;
+    cursor: pointer;
+    transition: background-color .16s ease, border-color .16s ease, color .16s ease;
+}
+
+#appShell .teacher-profile-page-step {
+    padding-right: 12px;
+    padding-left: 12px;
+}
+
+#appShell .teacher-profile-page-number.active {
+    border-color: #b96a4d;
+    background: #b96a4d;
+    color: #fff;
+}
+
+#appShell .teacher-profile-page-step:hover:not(:disabled),
+#appShell .teacher-profile-page-number:hover:not(.active) {
+    border-color: #d3a68f;
+    background: #fff7f1;
+}
+
+#appShell .teacher-profile-page-step:disabled {
+    color: #b6aaa2;
+    cursor: not-allowed;
+}
+
+#appShell .teacher-profile-page-step:focus-visible,
+#appShell .teacher-profile-page-number:focus-visible {
+    outline: 3px solid rgba(217, 129, 91, .3);
+    outline-offset: 2px;
+}
+
+#appShell .teacher-profile-pagination-ellipsis {
+    padding: 0 2px;
+    color: #8b7b71;
+}
+
+#appShell .teacher-profile-result {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    width: 100%;
+    min-width: 0;
+    padding: 16px 18px;
+    border: 1px solid #eae5e0;
+    border-left: 3px solid #d9815b;
+    border-radius: 12px;
+    background: #fff;
+    color: #35312f;
+    text-align: left;
+    cursor: pointer;
+    box-shadow: 0 3px 12px rgba(51, 43, 37, .035);
+}
+
+#appShell .teacher-profile-result:hover,
+#appShell .teacher-profile-result:focus-visible {
+    border-color: #d9b8a5;
+    background: #fffaf6;
+}
+
+#appShell .teacher-profile-result:focus-visible,
+#appShell .teacher-profile-tab:focus-visible {
+    outline: 3px solid rgba(217, 129, 91, .25);
+    outline-offset: 2px;
+}
+
+#appShell .teacher-profile-result-copy {
+    display: grid;
+    gap: 4px;
+    min-width: 0;
+    margin-right: auto;
+}
+
+#appShell .teacher-profile-result-copy strong {
+    overflow-wrap: anywhere;
+    font-size: 1rem;
+}
+
+#appShell .teacher-profile-result-copy small {
+    color: #82766f;
+}
+
+#appShell .teacher-profile-result-warning {
+    color: #8a531f;
+    font-size: .76rem;
+    font-weight: 700;
+}
+
+#appShell .teacher-profile-result-arrow {
+    flex: 0 0 auto;
+    color: #a85e41;
+    font-size: 1.15rem;
+}
+
+#appShell .teacher-profile-dashboard-heading {
+    margin-bottom: 20px;
+}
+
+#appShell .teacher-portal-app-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 18px;
+    margin: -4px 0 24px;
+    padding: 0 0 16px;
+    border-bottom: 1px solid #eee4dc;
+}
+
+#appShell .teacher-portal-app-brand {
+    display: flex;
+    align-items: center;
+    gap: 11px;
+    min-width: 0;
+}
+
+#appShell .teacher-portal-app-mark {
+    flex: 0 0 auto;
+    width: 38px;
+    height: 38px;
+}
+
+#appShell .teacher-portal-app-name,
+#appShell .teacher-portal-app-label {
+    margin: 0;
+}
+
+#appShell .teacher-portal-app-name {
+    color: #35312f;
+    font-size: .86rem;
+    font-weight: 850;
+    letter-spacing: .07em;
+}
+
+#appShell .teacher-portal-app-label {
+    margin-top: 3px;
+    color: #8d5037;
+    font-size: .8rem;
+    font-weight: 650;
+}
+
+#appShell .teacher-portal-public-navigation {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 8px;
+    margin: 0;
+}
+
+#appShell .teacher-portal-public-navigation .btn-clear {
+    min-height: 44px;
+    margin: 0;
+    padding: 9px 12px;
+}
+
+#appShell .teacher-portal-public-navigation .teacher-profile-header-back {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 44px;
+    max-width: 100%;
+    margin: 0;
+    padding: 9px 12px;
+    border: 1px solid #e2c2b2;
+    border-radius: 10px;
+    background: #fffaf6;
+    color: #8d5037;
+    font: inherit;
+    font-weight: 700;
+    line-height: 1.25;
+    text-align: center;
+    overflow-wrap: anywhere;
+    cursor: pointer;
+    transition: background-color .16s ease, border-color .16s ease, color .16s ease;
+}
+
+#appShell .teacher-portal-public-navigation .teacher-profile-header-back:hover {
+    border-color: #ca9277;
+    background: #fff3eb;
+    color: #75412e;
+}
+
+#appShell .teacher-portal-public-navigation .teacher-profile-header-back:focus-visible {
+    outline: 3px solid rgba(217, 129, 91, .35);
+    outline-offset: 2px;
+}
+
+#appShell.teacher-portal-mode .teacher-profile-dashboard-heading {
+    margin-bottom: 16px;
+}
+
+#appShell .teacher-portal-admin-period {
+    display: grid;
+    gap: 7px;
+    width: min(100%, 420px);
+    margin-top: 14px;
+}
+
+#appShell .teacher-portal-admin-period label {
+    color: #665d56;
+    font-size: .84rem;
+    font-weight: 700;
+}
+
+#appShell .teacher-portal-admin-period select {
+    width: 100%;
+    min-height: 44px;
+    padding: 9px 12px;
+    border: 1px solid #e6d9ce;
+    border-radius: 10px;
+    background: #fff;
+    color: #35312f;
+    font: inherit;
+}
+
+#appShell .teacher-portal-admin-period select:focus-visible {
+    outline: 3px solid rgba(217, 129, 91, .2);
+    border-color: #d9815b;
+}
+
+#appShell #teacherPortalAdminPeriodStatus {
+    min-height: 1.2em;
+    margin: 0;
+    color: #746961;
+    font-size: .82rem;
+}
+
+#appShell #teacherPortalAdminPeriodStatus.error {
+    color: #b42318;
+}
+
+#appShell .teacher-profile-dashboard-heading h2 {
+    margin: 4px 0 8px;
+    overflow-wrap: anywhere;
+}
+
+#appShell .teacher-profile-period {
+    margin: 0;
+    color: #746961;
+}
+
+#appShell .teacher-profile-period strong {
+    color: #35312f;
+}
+
+#appShell .teacher-profile-ambiguity {
+    margin: 14px 0 0;
+    padding: 11px 13px;
+    border: 1px solid #f0d7b4;
+    border-radius: 9px;
+    background: #fff8ec;
+    color: #765322;
+    font-size: .86rem;
+    line-height: 1.5;
+}
+
+#appShell .teacher-profile-tabs {
+    display: flex;
+    gap: 8px;
+    overflow-x: auto;
+    margin-bottom: 16px;
+    border-bottom: 1px solid #eadfd7;
+}
+
+#appShell .teacher-profile-tab {
+    flex: 0 0 auto;
+    padding: 11px 14px;
+    border: 0;
+    border-bottom: 3px solid transparent;
+    background: transparent;
+    color: #746961;
+    font: inherit;
+    font-weight: 750;
+    cursor: pointer;
+}
+
+#appShell .teacher-profile-tab.active {
+    border-bottom-color: #d9815b;
+    color: #8d5037;
+}
+
+#appShell .teacher-profile-panel {
+    display: none;
+    min-width: 0;
+}
+
+#appShell .teacher-profile-panel.active {
+    display: block;
+}
+
+#appShell .teacher-profile-load-scroll {
+    max-width: 100%;
+    overflow-x: auto;
+    border-radius: 10px;
+    background: #fff;
+}
+
+#appShell .teacher-profile-load-scroll .teacher-load-pdf {
+    margin: 0 auto;
+}
+
+#appShell #teacherProfileTimetablePanel .schedule-grid-wrapper {
+    max-width: 100%;
+    overflow-x: auto;
+    border: 1px solid #e9e1da;
+    border-radius: 10px;
+    background: #fff;
+}
+
+#appShell #teacherProfileTimetablePanel .schedule-grid {
+    min-width: 720px;
+}
+
+@media (max-width: 600px) {
+    #workspaceScreen .workspace-actions {
+        display: grid;
+        gap: 10px;
+    }
+
+    #workspaceScreen #openPublicTeacherPortalWorkspace {
+        width: 100%;
+    }
+
+    #appShell .teacher-profile-result {
+        align-items: flex-start;
+        flex-wrap: wrap;
+        padding: 14px;
+    }
+
+    #appShell .teacher-profile-result-copy {
+        flex-basis: calc(100% - 32px);
+    }
+
+    #appShell .teacher-profile-result-warning {
+        margin-right: auto;
+    }
+
+    #appShell .teacher-profile-pagination {
+        align-items: flex-start;
+        flex-direction: column;
+        gap: 10px;
+    }
+
+    #appShell .teacher-profile-pagination-controls {
+        justify-content: flex-start;
+        gap: 4px;
+        width: 100%;
+    }
+
+    #appShell .teacher-profile-page-step,
+    #appShell .teacher-profile-page-number {
+        min-width: 38px;
+        min-height: 42px;
+    }
+
+    #appShell .teacher-portal-app-header {
+        align-items: flex-start;
+        flex-direction: column;
+        gap: 12px;
+        margin-bottom: 18px;
+    }
+
+    #appShell .teacher-portal-public-navigation {
+        justify-content: flex-start;
+        width: 100%;
+    }
+
+    #appShell .teacher-portal-public-navigation .btn-clear {
+        flex: 1 1 auto;
+        width: auto;
+    }
+
+    #appShell .teacher-profile-load-scroll .teacher-load-pdf {
+        margin: 0;
+    }
+}
+
+@media (max-width: 380px) {
+    #appShell .teacher-portal-public-navigation {
+        align-items: stretch;
+        flex-direction: column;
+    }
+
+    #appShell .teacher-portal-public-navigation .btn-clear,
+    #appShell .teacher-portal-public-navigation .teacher-profile-header-back {
+        width: 100%;
+    }
 }
