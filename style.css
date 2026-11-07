@@ -5464,6 +5464,35 @@ body {
     font-weight: 700;
 }
 
+#appShell.teacher-portal-mode .teacher-portal-room-filters {
+    flex-wrap: wrap;
+    gap: 12px;
+    margin: 16px 0;
+}
+
+#appShell.teacher-portal-mode .teacher-portal-room-filter {
+    display: grid;
+    gap: 7px;
+    width: min(100%, 320px);
+    color: #665d56;
+    font-size: .86rem;
+    font-weight: 700;
+}
+
+#appShell.teacher-portal-mode .teacher-portal-room-filter .term-filter {
+    width: 100%;
+    min-height: 44px;
+    border-color: #e6d9ce;
+    border-radius: 10px;
+    color: #35312f;
+    font: inherit;
+}
+
+#appShell.teacher-portal-mode .teacher-portal-room-filter .term-filter:focus-visible {
+    outline: 3px solid rgba(217, 129, 91, .2);
+    border-color: #d9815b;
+}
+
 #appShell.teacher-portal-mode .teacher-portal-room-day-select select {
     min-height: 44px;
     padding: 9px 12px;

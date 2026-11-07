@@ -148,6 +148,8 @@ function createManager({ user = null, isPublic = true } = {}) {
         teacherPortalRoomOccupancyLoading: false,
         teacherPortalRoomOccupancyError: '',
         teacherPortalRoomDay: 'Monday',
+        teacherPortalRoomBuildingFilter: '',
+        teacherPortalRoomFilter: '',
         teacherPortalDirectory: [],
         selectedTeacherProfile: null,
         teacherProfileTab: 'load',
@@ -473,6 +475,30 @@ async function run() {
         3,
         'adjacent occupied intervals must remain separate'
     );
+    assert.match(elements.get('teacherPortalRoomBuildingFilter').innerHTML, /All Buildings/);
+    assert.match(elements.get('teacherPortalRoomBuildingFilter').innerHTML, /BUILDING A/);
+    assert.match(elements.get('teacherPortalRoomBuildingFilter').innerHTML, /BUILDING B/);
+    assert.match(elements.get('teacherPortalRoomFilter').innerHTML, /All Rooms/);
+    assert.match(elements.get('teacherPortalRoomFilter').innerHTML, /R101/);
+    assert.match(elements.get('teacherPortalRoomFilter').innerHTML, /R102/);
+    visitor.setTeacherPortalRoomBuilding('BUILDING A');
+    assert.equal(visitor.teacherPortalRoomFilter, '', 'changing building must reset the room filter');
+    assert.match(elements.get('teacherPortalRoomFilter').innerHTML, /R101/);
+    assert.doesNotMatch(elements.get('teacherPortalRoomFilter').innerHTML, /R102/);
+    assert.match(elements.get('teacherPortalRoomOccupancyList').innerHTML, /R101/);
+    assert.doesNotMatch(elements.get('teacherPortalRoomOccupancyList').innerHTML, /R102/);
+    visitor.setTeacherPortalRoomFilter(visitor.getTeacherPortalRoomOptions()[0].key);
+    assert.match(elements.get('teacherPortalRoomOccupancyList').innerHTML, /R101/);
+    assert.doesNotMatch(elements.get('teacherPortalRoomOccupancyList').innerHTML, /R102/);
+    visitor.setTeacherPortalRoomBuilding('BUILDING B');
+    assert.equal(visitor.teacherPortalRoomFilter, '', 'changing building must return to all rooms in that building');
+    assert.doesNotMatch(elements.get('teacherPortalRoomFilter').innerHTML, /R101/);
+    assert.match(elements.get('teacherPortalRoomFilter').innerHTML, /R102/);
+    assert.doesNotMatch(elements.get('teacherPortalRoomOccupancyList').innerHTML, /R101/);
+    assert.match(elements.get('teacherPortalRoomOccupancyList').innerHTML, /R102/);
+    visitor.setTeacherPortalRoomBuilding('');
+    assert.match(elements.get('teacherPortalRoomOccupancyList').innerHTML, /R101/);
+    assert.match(elements.get('teacherPortalRoomOccupancyList').innerHTML, /R102/);
     visitor.setTeacherPortalRoomDay('Tuesday');
     assert.equal(elements.get('teacherPortalRoomDay').value, 'Tuesday');
     assert.match(elements.get('teacherPortalRoomOccupancyList').innerHTML, /10:00 AM – 11:00 AM/);

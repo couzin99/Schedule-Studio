@@ -51,6 +51,8 @@ class ScheduleManager {
         this.teacherPortalRoomOccupancyLoading = false;
         this.teacherPortalRoomOccupancyError = '';
         this.teacherPortalRoomDay = 'Monday';
+        this.teacherPortalRoomBuildingFilter = '';
+        this.teacherPortalRoomFilter = '';
         this.teacherPortalActivePeriod = null;
         this.teacherPortalPeriodLoadError = null;
         this.teacherPortalAdminUserId = '9e2fcb80-7cac-47c6-b495-d5b6ebf296dc';
@@ -155,6 +157,14 @@ class ScheduleManager {
         document.getElementById('teacherPortalRoomDay')?.addEventListener(
             'change',
             event => this.setTeacherPortalRoomDay(event.currentTarget.value)
+        );
+        document.getElementById('teacherPortalRoomBuildingFilter')?.addEventListener(
+            'change',
+            event => this.setTeacherPortalRoomBuilding(event.currentTarget.value)
+        );
+        document.getElementById('teacherPortalRoomFilter')?.addEventListener(
+            'change',
+            event => this.setTeacherPortalRoomFilter(event.currentTarget.value)
         );
         document.getElementById('teacherPortalAdminPeriodSelect')?.addEventListener(
             'change',
@@ -1963,6 +1973,8 @@ class ScheduleManager {
         if (!this.isPublicTeacherPortal) return;
         const requestId = ++this.teacherPortalRoomOccupancyRequestId;
         this.teacherPortalView = 'room-assignment';
+        this.teacherPortalRoomBuildingFilter = '';
+        this.teacherPortalRoomFilter = '';
         this.teacherPortalRoomOccupancy = [];
         this.teacherPortalRoomOccupancyLoading = true;
         this.teacherPortalRoomOccupancyError = '';
@@ -2084,6 +2096,41 @@ class ScheduleManager {
         this.renderTeacherPortalRoomOccupancy();
     }
 
+    getTeacherPortalRoomBuildings() {
+        return [...new Set(
+            this.teacherPortalRoomOccupancy
+                .map(room => room.building)
+                .filter(Boolean)
+        )].sort((a, b) => a.localeCompare(b));
+    }
+
+    getTeacherPortalRoomOptions(building = this.teacherPortalRoomBuildingFilter) {
+        const rooms = new Map();
+        this.teacherPortalRoomOccupancy.forEach(room => {
+            if (building && room.building !== building) return;
+            const key = JSON.stringify([room.building, room.name]);
+            if (!rooms.has(key)) rooms.set(key, { key, ...room });
+        });
+        return [...rooms.values()].sort((a, b) =>
+            a.name.localeCompare(b.name) ||
+            a.building.localeCompare(b.building)
+        );
+    }
+
+    setTeacherPortalRoomBuilding(building) {
+        if (building && !this.getTeacherPortalRoomBuildings().includes(building)) return;
+        this.teacherPortalRoomBuildingFilter = building;
+        this.teacherPortalRoomFilter = '';
+        this.renderTeacherPortalRoomOccupancy();
+    }
+
+    setTeacherPortalRoomFilter(roomKey) {
+        const roomOptions = this.getTeacherPortalRoomOptions();
+        if (roomKey && !roomOptions.some(room => room.key === roomKey)) return;
+        this.teacherPortalRoomFilter = roomKey;
+        this.renderTeacherPortalRoomOccupancy();
+    }
+
     formatTeacherPortalOccupancyTime(seconds) {
         const wholeSeconds = Math.floor(seconds);
         const hours = Math.floor(wholeSeconds / 3600);
@@ -2106,9 +2153,38 @@ class ScheduleManager {
         const message = document.getElementById('teacherPortalRoomMessage');
         const daySelect = document.getElementById('teacherPortalRoomDay');
         const period = document.getElementById('teacherPortalRoomPeriod');
+        const buildingSelect = document.getElementById('teacherPortalRoomBuildingFilter');
+        const roomSelect = document.getElementById('teacherPortalRoomFilter');
         if (!list || !message || !daySelect) return;
 
         if (period) period.textContent = this.getTeacherProfilePeriodLabel();
+        const buildings = this.getTeacherPortalRoomBuildings();
+        if (!buildings.includes(this.teacherPortalRoomBuildingFilter)) {
+            this.teacherPortalRoomBuildingFilter = '';
+        }
+        if (buildingSelect) {
+            buildingSelect.innerHTML =
+                '<option value="">All Buildings</option>' +
+                buildings.map(building =>
+                    `<option value="${this.escapeHtml(building)}">${this.escapeHtml(building)}</option>`
+                ).join('');
+            buildingSelect.value = this.teacherPortalRoomBuildingFilter;
+        }
+        const roomOptions = this.getTeacherPortalRoomOptions();
+        if (!roomOptions.some(room => room.key === this.teacherPortalRoomFilter)) {
+            this.teacherPortalRoomFilter = '';
+        }
+        if (roomSelect) {
+            roomSelect.innerHTML =
+                '<option value="">All Rooms</option>' +
+                roomOptions.map(room => {
+                    const label = room.building
+                        ? `${room.name} (${room.building})`
+                        : room.name;
+                    return `<option value="${this.escapeHtml(room.key)}">${this.escapeHtml(label)}</option>`;
+                }).join('');
+            roomSelect.value = this.teacherPortalRoomFilter;
+        }
         const days = this.getTeacherPortalRoomDays();
         if (!days.includes(this.teacherPortalRoomDay)) {
             this.teacherPortalRoomDay = days[0] || 'Monday';
@@ -2137,6 +2213,17 @@ class ScheduleManager {
             return;
         }
 
+        const visibleRooms = this.teacherPortalRoomOccupancy.filter(room =>
+            (!this.teacherPortalRoomBuildingFilter ||
+                room.building === this.teacherPortalRoomBuildingFilter) &&
+            (!this.teacherPortalRoomFilter ||
+                JSON.stringify([room.building, room.name]) === this.teacherPortalRoomFilter)
+        );
+        if (!visibleRooms.length) {
+            list.innerHTML = '<p class="empty-message">No rooms match the selected filters.</p>';
+            return;
+        }
+
         const dayIntervals = this.teacherPortalRoomOccupancy.flatMap(room =>
             room.intervals.filter(interval =>
                 interval.day.toLowerCase() === this.teacherPortalRoomDay.toLowerCase()
@@ -2152,7 +2239,7 @@ class ScheduleManager {
         const dayEnd = Math.max(21 * 3600, latestInterval);
         const dayLabel = this.escapeHtml(this.teacherPortalRoomDay);
 
-        list.innerHTML = this.teacherPortalRoomOccupancy.map(room => {
+        list.innerHTML = visibleRooms.map(room => {
             const intervals = room.intervals
                 .filter(interval =>
                     interval.day.toLowerCase() === this.teacherPortalRoomDay.toLowerCase()
@@ -6373,6 +6460,8 @@ class ScheduleManager {
         this.teacherPortalRoomOccupancyLoading = false;
         this.teacherPortalRoomOccupancyError = '';
         this.teacherPortalRoomDay = 'Monday';
+        this.teacherPortalRoomBuildingFilter = '';
+        this.teacherPortalRoomFilter = '';
         this.teacherPortalDirectory = [];
         this.teacherPortalSchedules = [];
         this.teacherPortalScheduleLoading = false;
