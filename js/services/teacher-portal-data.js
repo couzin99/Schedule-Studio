@@ -17,6 +17,10 @@
         });
     }
 
+    async function fetchRoomOccupancy(supabaseClient) {
+        return await supabaseClient.rpc('get_teacher_portal_room_occupancy');
+    }
+
     async function setActivePeriod(supabaseClient, schedulePeriodId) {
         return await supabaseClient.rpc('set_teacher_portal_active_period', {
             p_schedule_period_id: schedulePeriodId
@@ -28,6 +32,7 @@
         fetchActivePeriod,
         fetchAdminPeriods,
         fetchTeacherSchedules,
+        fetchRoomOccupancy,
         setActivePeriod
     });
 })(globalThis);

@@ -5444,7 +5444,129 @@ body {
     min-width: 720px;
 }
 
+#appShell.teacher-portal-mode .teacher-portal-choices {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(min(100%, 280px), 1fr));
+    gap: 12px;
+}
+
+#appShell.teacher-portal-mode .teacher-portal-choice {
+    min-height: 100px;
+}
+
+#appShell.teacher-portal-mode .teacher-portal-room-day-select {
+    display: grid;
+    gap: 7px;
+    width: min(100%, 320px);
+    margin: 18px 0;
+    color: #665d56;
+    font-size: .86rem;
+    font-weight: 700;
+}
+
+#appShell.teacher-portal-mode .teacher-portal-room-day-select select {
+    min-height: 44px;
+    padding: 9px 12px;
+    border: 1px solid #e6d9ce;
+    border-radius: 10px;
+    background: #fff;
+    color: #35312f;
+    font: inherit;
+}
+
+#appShell.teacher-portal-mode .teacher-portal-room-day-select select:focus-visible {
+    outline: 3px solid rgba(217, 129, 91, .2);
+    border-color: #d9815b;
+}
+
+#appShell.teacher-portal-mode .teacher-portal-room-list {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(min(100%, 320px), 1fr));
+    gap: 12px;
+    margin-top: 16px;
+}
+
+#appShell.teacher-portal-mode .teacher-portal-room-card {
+    min-width: 0;
+    padding: 16px;
+    border: 1px solid #eae5e0;
+    border-left: 3px solid #d9815b;
+    border-radius: 12px;
+    background: #fff;
+}
+
+#appShell.teacher-portal-mode .teacher-portal-room-header {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 12px;
+}
+
+#appShell.teacher-portal-mode .teacher-portal-room-header h3 {
+    min-width: 0;
+    margin: 0;
+    color: #35312f;
+    font-size: 1rem;
+    overflow-wrap: anywhere;
+}
+
+#appShell.teacher-portal-mode .teacher-portal-room-building {
+    flex: 0 0 auto;
+    padding: 4px 8px;
+    border-radius: 999px;
+    background: #fff3eb;
+    color: #8d5037;
+    font-size: .74rem;
+    font-weight: 700;
+}
+
+#appShell.teacher-portal-mode .teacher-portal-room-day-label {
+    color: #746961;
+    margin: 12px 0 8px;
+}
+
+#appShell.teacher-portal-mode .teacher-portal-room-intervals {
+    display: grid;
+    gap: 6px;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+}
+
+#appShell.teacher-portal-mode .teacher-portal-room-interval {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    padding: 9px 10px;
+    border: 1px solid transparent;
+    border-radius: 8px;
+    font-size: .84rem;
+}
+
+#appShell.teacher-portal-mode .teacher-portal-room-interval.is-occupied {
+    border-color: #f0d7b4;
+    background: #fff8ec;
+    color: #765322;
+}
+
+#appShell.teacher-portal-mode .teacher-portal-room-interval.is-vacant {
+    border-color: #d7e8dc;
+    background: #f2faf4;
+    color: #376344;
+}
+
+#appShell.teacher-portal-mode .teacher-portal-room-interval strong {
+    font-weight: 800;
+}
+
 @media (max-width: 600px) {
+    #appShell.teacher-portal-mode .teacher-portal-room-interval {
+        align-items: flex-start;
+        flex-direction: column;
+        gap: 3px;
+    }
+
     #workspaceScreen .workspace-actions {
         display: grid;
         gap: 10px;
@@ -5506,6 +5628,12 @@ body {
     #appShell .teacher-profile-load-scroll .teacher-load-pdf {
         margin: 0;
     }
+}
+
+#appShell.container.teacher-portal-mode {
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
 }
 
 @media (max-width: 380px) {

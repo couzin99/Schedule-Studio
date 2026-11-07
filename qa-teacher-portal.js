@@ -93,6 +93,7 @@ global.document = {
 };
 
 eval(`${fs.readFileSync('script.js', 'utf8')}; globalThis.TeacherPortalQaManager = ScheduleManager;`);
+eval(fs.readFileSync('js/services/teacher-portal-data.js', 'utf8'));
 
 const ADMIN_ID = '9e2fcb80-7cac-47c6-b495-d5b6ebf296dc';
 const PERIOD_ONE = {
@@ -141,6 +142,12 @@ function createManager({ user = null, isPublic = true } = {}) {
         teacherPortalSchedules: [],
         teacherPortalScheduleLoading: false,
         teacherPortalScheduleError: '',
+        teacherPortalView: 'home',
+        teacherPortalRoomOccupancy: [],
+        teacherPortalRoomOccupancyRequestId: 0,
+        teacherPortalRoomOccupancyLoading: false,
+        teacherPortalRoomOccupancyError: '',
+        teacherPortalRoomDay: 'Monday',
         teacherPortalDirectory: [],
         selectedTeacherProfile: null,
         teacherProfileTab: 'load',
@@ -170,12 +177,45 @@ async function run() {
     assert.equal(global.TeacherPortalQaManager.prototype.toggleTeacherPortalAuthMode, undefined);
     assert.equal(managerName(' \tJane   Doe\r\n'), 'Jane Doe');
 
+    const occupancyRpcCalls = [];
+    await global.TeacherPortalDataService.fetchRoomOccupancy({
+        rpc(...args) {
+            occupancyRpcCalls.push(args);
+            return Promise.resolve({ data: [], error: null });
+        }
+    });
+    assert.deepEqual(
+        occupancyRpcCalls,
+        [['get_teacher_portal_room_occupancy']],
+        'room occupancy must call the exact no-argument RPC'
+    );
+
     const directory = [
         { name: 'Jane Doe', matching_teacher_records: 2 },
         { name: 'Jane Smith', matching_teacher_records: 1 },
         { name: 'John Doe', matching_teacher_records: 1 }
     ];
     const calls = [];
+    let occupancyReads = 0;
+    const roomOccupancy = [
+        {
+            room_id: 'room-one',
+            room_name: 'R101',
+            building: 'BUILDING A',
+            occupied_intervals: [
+                { day: 'Monday', start_time: '08:00:00', end_time: '09:00:00' },
+                { day: 'Monday', start_time: '09:00:00', end_time: '09:30:00' },
+                { day: 'Monday', start_time: '22:00:00', end_time: '23:00:00' },
+                { day: 'Tuesday', start_time: '10:00:00', end_time: '11:00:00' }
+            ]
+        },
+        {
+            room_id: 'room-two',
+            room_name: 'R102',
+            building: 'BUILDING B',
+            occupied_intervals: []
+        }
+    ];
     global.TeacherPortalDataService = {
         async fetchTeacherDirectory() {
             calls.push('directory');
@@ -193,6 +233,10 @@ async function run() {
             calls.push(`schedules:${teacherName}`);
             return { data: [assignment('assignment-one', teacherName)], error: null };
         },
+        async fetchRoomOccupancy() {
+            occupancyReads++;
+            return { data: roomOccupancy, error: null };
+        },
         async setActivePeriod(_client, periodId) {
             calls.push(`set-period:${periodId}`);
             return { error: null };
@@ -207,14 +251,22 @@ async function run() {
     assert.match(landingMarkup, /id="openTeacherPortalLogin"[\s\S]*?>Teacher Portal/);
     assert.doesNotMatch(landingMarkup, /class="[^"]*\bhidden\b/);
     assert.doesNotMatch(loginMarkup, /Public Teacher Portal/);
+    const workspaceMarkup = markup.match(/<div id="workspaceScreen"[\s\S]*?<\/div>\s*<\/div>\s*<\/div>/)?.[0] || '';
+    assert.match(workspaceMarkup, /id="openPublicTeacherPortalWorkspace"[\s\S]*?class="[^"]*\bhidden\b/);
     const publicViewMarkup = markup.match(/<div id="teacherProfileView"[\s\S]*?<\/div>\s*<!-- Student Schedule View -->/)?.[0] || '';
     assert.match(publicViewMarkup, /class="teacher-portal-app-header"/);
     assert.match(publicViewMarkup, /SCHEDULE STUDIO/);
     assert.match(publicViewMarkup, /Teacher Portal/);
+    assert.match(publicViewMarkup, /id="teacherPortalHome"/);
+    assert.match(publicViewMarkup, /id="teacherPortalTeacherSearchChoice"[^>]*>[\s\S]*?Teacher Search/);
+    assert.match(publicViewMarkup, /id="teacherPortalRoomAssignmentChoice"[^>]*>[\s\S]*?Room Assignment/);
+    assert.match(publicViewMarkup, /id="teacherPortalRoomAssignment"/);
     assert.match(publicViewMarkup, /id="teacherPortalBackToLanding"[^>]*>\s*← Back\s*</);
     assert.match(publicViewMarkup, /id="teacherProfileBack"[^>]*>← Back to Teacher Search</);
     const sidebarMarkup = markup.match(/<nav class="view-toggle main-navigation"[\s\S]*?<\/nav>/)?.[0] || '';
     assert.match(sidebarMarkup, /id="teacherProfileNavigation" class="toggle-btn hidden" data-view="teacher-profile">TEACHER VIEW<\/button>/);
+    assert.match(sidebarMarkup, /data-view="rooms">ROOM ASSIGNMENT<\/button>/);
+    assert.match(markup, /id="openPublicTeacherPortalApp"[\s\S]*?class="[^"]*\bhidden\b/);
     visitor.updateTeacherPortalNavigation();
     for (const id of [
         'openPublicTeacherPortalWorkspace',
@@ -276,12 +328,17 @@ async function run() {
     assert.equal(
         elements.get('openPublicTeacherPortalApp').classList.contains('hidden'),
         false,
-        'administrators should see the public portal entry'
+        'administrators should see the public portal entry in the Scheduler sidebar'
     );
     assert.equal(
         elements.get('teacherProfileNavigation').classList.contains('hidden'),
-        false,
-        'the designated administrator should see Teacher View'
+        true,
+        'the portal entry must not add a duplicate item to the Scheduler navigation'
+    );
+    assert.equal(
+        elements.get('openPublicTeacherPortalWorkspace').classList.contains('hidden'),
+        true,
+        'administrators should not see the public portal entry on period selection'
     );
 
     const startupLanding = element();
@@ -319,9 +376,9 @@ async function run() {
     });
     assert.equal(startupManager.currentUser.id, ADMIN_ID);
     assert.equal(
-        elements.get('teacherProfileNavigation').classList.contains('hidden'),
-        false,
-        'administrator Teacher View should appear after initial-session restoration'
+        elements.get('openPublicTeacherPortalWorkspace').classList.contains('hidden'),
+        true,
+        'period selection should not expose the public portal entry after session restoration'
     );
     assert.equal(startupLanding.classList.contains('hidden'), false);
     assert.equal(startupWorkspace.classList.contains('hidden'), true);
@@ -374,6 +431,10 @@ async function run() {
 
     await visitor.enterPublicTeacherPortal();
     assert.equal(visitor.currentUser, null, 'the public portal must work without a session');
+    assert.equal(visitor.teacherPortalView, 'home');
+    assert.equal(elements.get('teacherPortalHome').classList.contains('hidden'), false);
+    assert.equal(elements.get('teacherProfileDirectory').classList.contains('hidden'), true);
+    assert.equal(elements.get('teacherPortalRoomAssignment').classList.contains('hidden'), true);
     assert.deepEqual(calls.slice(0, 2), ['directory', 'active-period']);
     assert.deepEqual(visitor.teacherPortalDirectory.map(teacher => teacher.name), [
         'Jane Doe',
@@ -381,6 +442,84 @@ async function run() {
         'John Doe'
     ]);
     assert.equal(visitor.teacherPortalActivePeriod.id, PERIOD_ONE.id);
+    visitor.openTeacherPortalSearch();
+    assert.equal(visitor.teacherPortalView, 'teacher-search');
+    assert.equal(elements.get('teacherProfileDirectory').classList.contains('hidden'), false);
+    assert.equal(elements.get('teacherPortalHome').classList.contains('hidden'), true);
+
+    visitor.returnToTeacherPortalChoices();
+    assert.equal(visitor.teacherPortalView, 'home');
+    await visitor.openTeacherPortalRoomAssignment();
+    assert.equal(visitor.selectedTeacherProfile, null, 'Room Assignment must not require a selected teacher');
+    assert.deepEqual(visitor.teacherPortalSchedules, [], 'room occupancy must not use selected-teacher schedules');
+    assert.equal(occupancyReads, 1);
+    assert.equal(
+        calls.filter(call => call.startsWith('schedules:')).length,
+        0,
+        'Room Assignment must not call the teacher-schedule RPC'
+    );
+    assert.equal(elements.get('teacherPortalRoomAssignment').classList.contains('hidden'), false);
+    assert.match(elements.get('teacherPortalRoomPeriod').textContent, /2026-2027/);
+    assert.match(elements.get('teacherPortalRoomOccupancyList').innerHTML, /R101/);
+    assert.match(elements.get('teacherPortalRoomOccupancyList').innerHTML, /BUILDING A/);
+    assert.match(elements.get('teacherPortalRoomOccupancyList').innerHTML, /R102/);
+    assert.match(elements.get('teacherPortalRoomOccupancyList').innerHTML, /BUILDING B/);
+    assert.match(elements.get('teacherPortalRoomOccupancyList').innerHTML, /Vacant/);
+    assert.match(elements.get('teacherPortalRoomOccupancyList').innerHTML, /8:00 AM – 9:00 AM/);
+    assert.match(elements.get('teacherPortalRoomOccupancyList').innerHTML, /9:00 AM – 9:30 AM/);
+    assert.match(elements.get('teacherPortalRoomOccupancyList').innerHTML, /10:00 PM – 11:00 PM/);
+    assert.equal(
+        (elements.get('teacherPortalRoomOccupancyList').innerHTML.match(/class="teacher-portal-room-interval is-occupied"/g) || []).length,
+        3,
+        'adjacent occupied intervals must remain separate'
+    );
+    visitor.setTeacherPortalRoomDay('Tuesday');
+    assert.equal(elements.get('teacherPortalRoomDay').value, 'Tuesday');
+    assert.match(elements.get('teacherPortalRoomOccupancyList').innerHTML, /10:00 AM – 11:00 AM/);
+    assert.doesNotMatch(elements.get('teacherPortalRoomOccupancyList').innerHTML, /8:00 AM – 9:00 AM/);
+    assert.match(elements.get('teacherPortalRoomOccupancyList').innerHTML, /Vacant<\/strong>\s*<span>7:00 AM – 10:00 AM/);
+    visitor.returnToTeacherPortalChoices();
+    assert.equal(elements.get('teacherPortalRoomAssignment').classList.contains('hidden'), true);
+
+    const emptyRooms = createManager();
+    emptyRooms.isPublicTeacherPortal = true;
+    global.TeacherPortalDataService.fetchRoomOccupancy = async () => ({
+        data: [],
+        error: null
+    });
+    await emptyRooms.openTeacherPortalRoomAssignment();
+    assert.match(elements.get('teacherPortalRoomOccupancyList').innerHTML, /No rooms are available/);
+
+    const failedRooms = createManager();
+    failedRooms.isPublicTeacherPortal = true;
+    global.TeacherPortalDataService.fetchRoomOccupancy = async () => ({
+        data: null,
+        error: new Error('Room service unavailable')
+    });
+    await failedRooms.openTeacherPortalRoomAssignment();
+    assert.equal(failedRooms.teacherPortalRoomOccupancyLoading, false);
+    assert.match(elements.get('teacherPortalRoomMessage').textContent, /Room service unavailable/);
+    assert.match(elements.get('teacherPortalRoomMessage').className, /error/);
+
+    let resolveStaleRoomRequest;
+    const staleRooms = createManager();
+    staleRooms.isPublicTeacherPortal = true;
+    global.TeacherPortalDataService.fetchRoomOccupancy = () =>
+        new Promise(resolve => { resolveStaleRoomRequest = resolve; });
+    const staleRoomRequest = staleRooms.openTeacherPortalRoomAssignment();
+    assert.equal(staleRooms.teacherPortalRoomOccupancyLoading, true);
+    assert.match(elements.get('teacherPortalRoomMessage').textContent, /Loading room occupancy/);
+    staleRooms.returnToTeacherPortalChoices();
+    resolveStaleRoomRequest({ data: roomOccupancy, error: null });
+    await staleRoomRequest;
+    assert.equal(staleRooms.teacherPortalView, 'home');
+    assert.deepEqual(staleRooms.teacherPortalRoomOccupancy, []);
+
+    global.TeacherPortalDataService.fetchRoomOccupancy = async () => ({
+        data: roomOccupancy,
+        error: null
+    });
+    visitor.openTeacherPortalSearch();
     visitor.teacherProfileSearch = '  jAnE   ';
     visitor.renderTeacherProfileResults();
     assert.match(elements.get('teacherProfileResults').innerHTML, /Jane Doe/);

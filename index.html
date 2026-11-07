@@ -391,6 +391,7 @@
                         </div>
                         <nav class="teacher-portal-public-navigation" aria-label="Teacher Portal navigation">
                             <button id="teacherProfileBack" class="teacher-profile-header-back hidden" type="button">← Back to Teacher Search</button>
+                            <button id="teacherPortalBackToChoices" class="teacher-profile-header-back hidden" type="button">← Back to options</button>
                             <button id="teacherPortalBackToLanding" class="btn-clear" type="button">
                                 ← Back
                             </button>
@@ -399,7 +400,32 @@
                             </button>
                         </nav>
                     </header>
-                    <section id="teacherProfileDirectory" aria-labelledby="teacherProfileTitle">
+                    <section id="teacherPortalHome" aria-labelledby="teacherPortalHomeTitle">
+                        <div class="view-heading teacher-profile-heading">
+                            <div>
+                                <p class="eyebrow">PUBLIC TEACHER PORTAL</p>
+                                <h2 id="teacherPortalHomeTitle">CHOOSE A VIEW</h2>
+                            </div>
+                        </div>
+                        <div class="teacher-portal-choices">
+                            <button id="teacherPortalTeacherSearchChoice" class="teacher-profile-result teacher-portal-choice" type="button">
+                                <span class="teacher-profile-result-copy">
+                                    <strong>Teacher Search</strong>
+                                    <small>Search for a teacher and view their teaching load or timetable.</small>
+                                </span>
+                                <span class="teacher-profile-result-arrow" aria-hidden="true">→</span>
+                            </button>
+                            <button id="teacherPortalRoomAssignmentChoice" class="teacher-profile-result teacher-portal-choice" type="button">
+                                <span class="teacher-profile-result-copy">
+                                    <strong>Room Assignment</strong>
+                                    <small>View room occupancy across the active academic period.</small>
+                                </span>
+                                <span class="teacher-profile-result-arrow" aria-hidden="true">→</span>
+                            </button>
+                        </div>
+                    </section>
+
+                    <section id="teacherProfileDirectory" aria-labelledby="teacherProfileTitle" class="hidden">
                         <div class="view-heading teacher-profile-heading">
                             <div>
                                 <p class="eyebrow">READ-ONLY DIRECTORY</p>
@@ -437,6 +463,29 @@
                         </div>
                         <div id="teacherProfileLoadPanel" class="teacher-profile-panel active" role="tabpanel" aria-labelledby="teacherProfileLoadTab"></div>
                         <div id="teacherProfileTimetablePanel" class="teacher-profile-panel" role="tabpanel" aria-labelledby="teacherProfileTimetableTab" hidden></div>
+                    </section>
+
+                    <section id="teacherPortalRoomAssignment" class="hidden" aria-labelledby="teacherPortalRoomTitle">
+                        <div class="view-heading teacher-profile-heading">
+                            <div>
+                                <p class="eyebrow">INSTITUTION-WIDE ROOM TIMETABLES</p>
+                                <h2 id="teacherPortalRoomTitle">ROOM ASSIGNMENT</h2>
+                            </div>
+                        </div>
+                        <p class="teacher-profile-period">Current academic period: <strong id="teacherPortalRoomPeriod"></strong></p>
+                        <label class="teacher-portal-room-day-select">
+                            <span>Inspect day</span>
+                            <select id="teacherPortalRoomDay" aria-label="Select day for room occupancy">
+                                <option value="Monday">Monday</option>
+                                <option value="Tuesday">Tuesday</option>
+                                <option value="Wednesday">Wednesday</option>
+                                <option value="Thursday">Thursday</option>
+                                <option value="Friday">Friday</option>
+                                <option value="Saturday">Saturday</option>
+                            </select>
+                        </label>
+                        <p id="teacherPortalRoomMessage" class="teacher-portal-message" role="status" aria-live="polite"></p>
+                        <div id="teacherPortalRoomOccupancyList" class="teacher-portal-room-list"></div>
                     </section>
                 </div>
 

@@ -45,6 +45,12 @@ class ScheduleManager {
         this.teacherPortalScheduleRequestId = 0;
         this.teacherPortalScheduleLoading = false;
         this.teacherPortalScheduleError = '';
+        this.teacherPortalView = 'home';
+        this.teacherPortalRoomOccupancy = [];
+        this.teacherPortalRoomOccupancyRequestId = 0;
+        this.teacherPortalRoomOccupancyLoading = false;
+        this.teacherPortalRoomOccupancyError = '';
+        this.teacherPortalRoomDay = 'Monday';
         this.teacherPortalActivePeriod = null;
         this.teacherPortalPeriodLoadError = null;
         this.teacherPortalAdminUserId = '9e2fcb80-7cac-47c6-b495-d5b6ebf296dc';
@@ -133,6 +139,22 @@ class ScheduleManager {
         document.getElementById('teacherPortalBackToLanding')?.addEventListener(
             'click',
             () => this.returnToStartingPageFromTeacherPortal()
+        );
+        document.getElementById('teacherPortalTeacherSearchChoice')?.addEventListener(
+            'click',
+            () => this.openTeacherPortalSearch()
+        );
+        document.getElementById('teacherPortalRoomAssignmentChoice')?.addEventListener(
+            'click',
+            () => this.openTeacherPortalRoomAssignment()
+        );
+        document.getElementById('teacherPortalBackToChoices')?.addEventListener(
+            'click',
+            () => this.returnToTeacherPortalChoices()
+        );
+        document.getElementById('teacherPortalRoomDay')?.addEventListener(
+            'change',
+            event => this.setTeacherPortalRoomDay(event.currentTarget.value)
         );
         document.getElementById('teacherPortalAdminPeriodSelect')?.addEventListener(
             'change',
@@ -258,6 +280,7 @@ class ScheduleManager {
                 this.teacherPortalSchedules = [];
                 this.teacherPortalScheduleLoading = false;
                 this.teacherPortalScheduleError = '';
+                this.teacherPortalView = 'teacher-search';
             }
             this.selectedTeacherProfile = null;
             this.renderTeacherProfileView();
@@ -1888,24 +1911,305 @@ class ScheduleManager {
         const dashboard = document.getElementById('teacherProfileDashboard');
         if (!directory || !dashboard) return;
         const hasSelection = Boolean(this.selectedTeacherProfile);
+        const isPublicPortal = this.isPublicTeacherPortal;
+        const portalView = this.teacherPortalView;
+        const home = document.getElementById('teacherPortalHome');
+        const roomAssignment = document.getElementById('teacherPortalRoomAssignment');
+        const showHome = isPublicPortal && portalView === 'home';
+        const showDirectory = isPublicPortal
+            ? portalView === 'teacher-search' && !hasSelection
+            : !hasSelection;
+        const showDashboard = isPublicPortal
+            ? portalView === 'profile' && hasSelection
+            : hasSelection;
+        const showRoomAssignment =
+            isPublicPortal && portalView === 'room-assignment';
+        home?.classList.toggle('hidden', !showHome);
+        roomAssignment?.classList.toggle('hidden', !showRoomAssignment);
+        directory.classList.toggle('hidden', !showDirectory);
+        dashboard.classList.toggle('hidden', !showDashboard);
         const backButton = document.getElementById('teacherProfileBack');
-        if (this.isPublicTeacherPortal && backButton) {
-            backButton.classList.toggle('hidden', !hasSelection);
-            if (hasSelection) {
+        if (backButton) {
+            backButton.classList.toggle('hidden', !isPublicPortal || !showDashboard);
+            if (isPublicPortal && showDashboard) {
                 backButton.style.setProperty('display', 'inline-flex', 'important');
             } else {
                 backButton.style.removeProperty('display');
             }
         }
-        directory.classList.toggle('hidden', hasSelection);
-        dashboard.classList.toggle('hidden', !hasSelection);
-        if (hasSelection) this.renderTeacherProfileDashboard();
-        else this.renderTeacherProfileResults();
+        document.getElementById('teacherPortalBackToChoices')
+            ?.classList.toggle('hidden', !isPublicPortal ||
+                !(portalView === 'teacher-search' || showRoomAssignment));
+        if (showDashboard) this.renderTeacherProfileDashboard();
+        else if (showDirectory) this.renderTeacherProfileResults();
+        else if (showRoomAssignment) this.renderTeacherPortalRoomOccupancy();
+    }
+
+    openTeacherPortalSearch() {
+        if (!this.isPublicTeacherPortal) return;
+        this.teacherPortalView = 'teacher-search';
+        this.renderTeacherProfileView();
+    }
+
+    returnToTeacherPortalChoices() {
+        if (!this.isPublicTeacherPortal) return;
+        this.teacherPortalRoomOccupancyRequestId++;
+        this.teacherPortalRoomOccupancyLoading = false;
+        this.teacherPortalView = 'home';
+        this.renderTeacherProfileView();
+    }
+
+    async openTeacherPortalRoomAssignment() {
+        if (!this.isPublicTeacherPortal) return;
+        const requestId = ++this.teacherPortalRoomOccupancyRequestId;
+        this.teacherPortalView = 'room-assignment';
+        this.teacherPortalRoomOccupancy = [];
+        this.teacherPortalRoomOccupancyLoading = true;
+        this.teacherPortalRoomOccupancyError = '';
+        this.renderTeacherProfileView();
+
+        try {
+            const { data, error } =
+                await TeacherPortalDataService.fetchRoomOccupancy(this.supabase);
+            if (
+                requestId !== this.teacherPortalRoomOccupancyRequestId ||
+                !this.isPublicTeacherPortal ||
+                this.teacherPortalView !== 'room-assignment'
+            ) return;
+            if (error) throw error;
+
+            this.teacherPortalRoomOccupancy =
+                this.normalizeTeacherPortalRoomOccupancy(data);
+            this.teacherPortalRoomOccupancyLoading = false;
+            this.renderTeacherPortalRoomOccupancy();
+        } catch (error) {
+            if (
+                requestId !== this.teacherPortalRoomOccupancyRequestId ||
+                !this.isPublicTeacherPortal ||
+                this.teacherPortalView !== 'room-assignment'
+            ) return;
+            console.error('Public room occupancy load failed:', error);
+            this.teacherPortalRoomOccupancy = [];
+            this.teacherPortalRoomOccupancyLoading = false;
+            this.teacherPortalRoomOccupancyError =
+                error.message || 'Unable to load room occupancy.';
+            this.renderTeacherPortalRoomOccupancy();
+        }
+    }
+
+    normalizeTeacherPortalRoomOccupancy(data) {
+        const rows = typeof data === 'string' ? JSON.parse(data) : data;
+        if (!Array.isArray(rows)) {
+            throw new Error('The room occupancy request returned an invalid response.');
+        }
+
+        const parseTime = value => {
+            if (typeof value !== 'string') return null;
+            if (!/^(?:[01]?\d|2[0-3]):[0-5]\d(?::[0-5]\d(?:\.\d+)?)?$/.test(value)) {
+                return null;
+            }
+            const [hours, minutes, seconds = '0'] = value.split(':');
+            return Number(hours) * 3600 +
+                Number(minutes) * 60 +
+                Number.parseFloat(seconds);
+        };
+
+        return rows.map(room => {
+            if (
+                !room ||
+                typeof room !== 'object' ||
+                typeof room.room_name !== 'string' ||
+                !room.room_name.trim() ||
+                !Array.isArray(room.occupied_intervals)
+            ) {
+                throw new Error('The room occupancy request returned an invalid room record.');
+            }
+            return {
+                name: room.room_name.trim(),
+                building: typeof room.building === 'string'
+                    ? room.building.trim()
+                    : '',
+                intervals: room.occupied_intervals.map(interval => {
+                    if (
+                        !interval ||
+                        typeof interval.day !== 'string' ||
+                        !interval.day.trim()
+                    ) {
+                        throw new Error('The room occupancy request returned an invalid interval.');
+                    }
+                    const startSeconds = parseTime(interval.start_time);
+                    const endSeconds = parseTime(interval.end_time);
+                    if (
+                        startSeconds === null ||
+                        endSeconds === null ||
+                        endSeconds <= startSeconds
+                    ) {
+                        throw new Error('The room occupancy request returned an invalid interval.');
+                    }
+                    return {
+                        day: interval.day.trim(),
+                        startSeconds,
+                        endSeconds
+                    };
+                })
+            };
+        });
+    }
+
+    getTeacherPortalRoomDays() {
+        const standardDays = [
+            'Monday', 'Tuesday', 'Wednesday', 'Thursday',
+            'Friday', 'Saturday', 'Sunday'
+        ];
+        const returnedDays = new Set(
+            this.teacherPortalRoomOccupancy.flatMap(room =>
+                room.intervals.map(interval => interval.day)
+            )
+        );
+        return [
+            ...standardDays.filter(day =>
+                day !== 'Sunday' || returnedDays.has(day)
+            ),
+            ...[...returnedDays]
+                .filter(day => !standardDays.some(
+                    standardDay => standardDay.toLowerCase() === day.toLowerCase()
+                ))
+                .sort((a, b) => a.localeCompare(b))
+        ];
+    }
+
+    setTeacherPortalRoomDay(day) {
+        if (!this.getTeacherPortalRoomDays().includes(day)) return;
+        this.teacherPortalRoomDay = day;
+        this.renderTeacherPortalRoomOccupancy();
+    }
+
+    formatTeacherPortalOccupancyTime(seconds) {
+        const wholeSeconds = Math.floor(seconds);
+        const hours = Math.floor(wholeSeconds / 3600);
+        const minutes = Math.floor((wholeSeconds % 3600) / 60);
+        const remainingSeconds = wholeSeconds % 60;
+        const fractionalSeconds = Number((seconds - wholeSeconds).toFixed(6));
+        const hourLabel = ((hours + 11) % 12) + 1;
+        const minuteLabel = String(minutes).padStart(2, '0');
+        const fractionalLabel = fractionalSeconds
+            ? String(fractionalSeconds).slice(1)
+            : '';
+        const secondLabel = remainingSeconds || fractionalLabel
+            ? `:${String(remainingSeconds).padStart(2, '0')}${fractionalLabel}`
+            : '';
+        return `${hourLabel}:${minuteLabel}${secondLabel} ${hours >= 12 ? 'PM' : 'AM'}`;
+    }
+
+    renderTeacherPortalRoomOccupancy() {
+        const list = document.getElementById('teacherPortalRoomOccupancyList');
+        const message = document.getElementById('teacherPortalRoomMessage');
+        const daySelect = document.getElementById('teacherPortalRoomDay');
+        const period = document.getElementById('teacherPortalRoomPeriod');
+        if (!list || !message || !daySelect) return;
+
+        if (period) period.textContent = this.getTeacherProfilePeriodLabel();
+        const days = this.getTeacherPortalRoomDays();
+        if (!days.includes(this.teacherPortalRoomDay)) {
+            this.teacherPortalRoomDay = days[0] || 'Monday';
+        }
+        daySelect.innerHTML = days.map(day =>
+            `<option value="${this.escapeHtml(day)}">${this.escapeHtml(day)}</option>`
+        ).join('');
+        daySelect.value = this.teacherPortalRoomDay;
+
+        if (this.teacherPortalRoomOccupancyLoading) {
+            message.textContent = 'Loading room occupancy…';
+            message.className = 'teacher-portal-message';
+            list.replaceChildren();
+            return;
+        }
+        if (this.teacherPortalRoomOccupancyError) {
+            message.textContent = this.teacherPortalRoomOccupancyError;
+            message.className = 'teacher-portal-message error';
+            list.replaceChildren();
+            return;
+        }
+        message.textContent = '';
+        message.className = 'teacher-portal-message';
+        if (!this.teacherPortalRoomOccupancy.length) {
+            list.innerHTML = '<p class="empty-message">No rooms are available for this academic period.</p>';
+            return;
+        }
+
+        const dayIntervals = this.teacherPortalRoomOccupancy.flatMap(room =>
+            room.intervals.filter(interval =>
+                interval.day.toLowerCase() === this.teacherPortalRoomDay.toLowerCase()
+            )
+        );
+        const earliestInterval = dayIntervals.length
+            ? Math.min(...dayIntervals.map(interval => interval.startSeconds))
+            : 7 * 3600;
+        const latestInterval = dayIntervals.length
+            ? Math.max(...dayIntervals.map(interval => interval.endSeconds))
+            : 21 * 3600;
+        const dayStart = Math.min(7 * 3600, earliestInterval);
+        const dayEnd = Math.max(21 * 3600, latestInterval);
+        const dayLabel = this.escapeHtml(this.teacherPortalRoomDay);
+
+        list.innerHTML = this.teacherPortalRoomOccupancy.map(room => {
+            const intervals = room.intervals
+                .filter(interval =>
+                    interval.day.toLowerCase() === this.teacherPortalRoomDay.toLowerCase()
+                )
+                .slice()
+                .sort((a, b) =>
+                    a.startSeconds - b.startSeconds ||
+                    a.endSeconds - b.endSeconds
+                );
+            const timeline = [];
+            let cursor = dayStart;
+            intervals.forEach(interval => {
+                if (interval.startSeconds > cursor) {
+                    timeline.push({
+                        type: 'vacant',
+                        startSeconds: cursor,
+                        endSeconds: interval.startSeconds
+                    });
+                }
+                timeline.push({
+                    type: 'occupied',
+                    startSeconds: interval.startSeconds,
+                    endSeconds: interval.endSeconds
+                });
+                cursor = Math.max(cursor, interval.endSeconds);
+            });
+            if (cursor < dayEnd) {
+                timeline.push({
+                    type: 'vacant',
+                    startSeconds: cursor,
+                    endSeconds: dayEnd
+                });
+            }
+            const building = room.building
+                ? `<span class="teacher-portal-room-building">${this.escapeHtml(room.building)}</span>`
+                : '';
+
+            return `<article class="teacher-portal-room-card">
+                <header class="teacher-portal-room-header">
+                    <h3>${this.escapeHtml(room.name)}</h3>
+                    ${building}
+                </header>
+                <p class="teacher-portal-room-day-label">${dayLabel}</p>
+                <ol class="teacher-portal-room-intervals">
+                    ${timeline.map(interval => `<li class="teacher-portal-room-interval is-${interval.type}">
+                        <strong>${interval.type === 'occupied' ? 'Occupied' : 'Vacant'}</strong>
+                        <span>${this.formatTeacherPortalOccupancyTime(interval.startSeconds)} – ${this.formatTeacherPortalOccupancyTime(interval.endSeconds)}</span>
+                    </li>`).join('')}
+                </ol>
+            </article>`;
+        }).join('');
     }
 
     async selectPublicTeacher(teacher, { preserveTab = false } = {}) {
         const requestId = ++this.teacherPortalScheduleRequestId;
         this.selectedTeacherProfile = teacher;
+        if (this.isPublicTeacherPortal) this.teacherPortalView = 'profile';
         if (!preserveTab) this.teacherProfileTab = 'load';
         this.teacherPortalSchedules = [];
         this.teacherPortalScheduleLoading = true;
@@ -5940,6 +6244,8 @@ class ScheduleManager {
         }
         if (this.isPublicTeacherPortal) {
             this.teacherPortalScheduleRequestId++;
+            this.teacherPortalRoomOccupancyRequestId++;
+            this.teacherPortalRoomOccupancyLoading = false;
             this.invalidateTeacherPortalAdminPeriodRequests();
         }
         this.activeAuthPortal = 'scheduler';
@@ -6007,16 +6313,16 @@ class ScheduleManager {
     }
 
     updateTeacherPortalNavigation() {
-        const showEntry = this.isTeacherPortalAdministrator() &&
+        const showSidebarEntry = this.isTeacherPortalAdministrator() &&
             !this.isPublicTeacherPortal;
         const showReturnToScheduler = this.isTeacherPortalAdministrator() &&
             this.isPublicTeacherPortal;
-        ['openPublicTeacherPortalWorkspace', 'openPublicTeacherPortalApp']
-            .forEach(id => {
-                document.getElementById(id)?.classList.toggle('hidden', !showEntry);
-            });
+        document.getElementById('openPublicTeacherPortalWorkspace')
+            ?.classList.add('hidden');
+        document.getElementById('openPublicTeacherPortalApp')
+            ?.classList.toggle('hidden', !showSidebarEntry);
         document.getElementById('teacherProfileNavigation')
-            ?.classList.toggle('hidden', !showEntry);
+            ?.classList.add('hidden');
         document.getElementById('teacherPortalReturnToScheduler')
             ?.classList.toggle('hidden', !showReturnToScheduler);
     }
@@ -6044,6 +6350,7 @@ class ScheduleManager {
         }
         this.isPublicTeacherPortal = true;
         this.activeAuthPortal = 'teacher';
+        this.teacherPortalView = 'home';
         this.updateTeacherPortalNavigation();
         authScreen?.classList.add('hidden');
         landingScreen?.classList.add('hidden');
@@ -6051,9 +6358,6 @@ class ScheduleManager {
         appShell.classList.add('teacher-portal-mode');
         appShell.classList.remove('owner-mode', 'owner-user-mode', 'hidden');
         document.getElementById('signOutBtn')?.classList.add('hidden');
-        document.getElementById('teacherProfileDirectory')?.classList.remove('hidden');
-        document.getElementById('teacherProfileDashboard')?.classList.add('hidden');
-        document.getElementById('teacherProfileBack')?.classList.add('hidden');
         document.querySelectorAll('.view-content').forEach(view => view.classList.remove('active'));
         document.getElementById('teacherProfileView')?.classList.add('active');
         document.querySelectorAll('.toggle-btn[data-view]').forEach(button => {
@@ -6064,6 +6368,11 @@ class ScheduleManager {
         this.selectedTeacherProfile = null;
         this.teacherProfileTab = 'load';
         this.teacherPortalScheduleRequestId++;
+        this.teacherPortalRoomOccupancyRequestId++;
+        this.teacherPortalRoomOccupancy = [];
+        this.teacherPortalRoomOccupancyLoading = false;
+        this.teacherPortalRoomOccupancyError = '';
+        this.teacherPortalRoomDay = 'Monday';
         this.teacherPortalDirectory = [];
         this.teacherPortalSchedules = [];
         this.teacherPortalScheduleLoading = false;
@@ -6081,7 +6390,9 @@ class ScheduleManager {
         document.getElementById('teacherProfileAmbiguity')?.classList.add('hidden');
         document.getElementById('teacherProfileLoadPanel')?.replaceChildren();
         document.getElementById('teacherProfileTimetablePanel')?.replaceChildren();
+        document.getElementById('teacherPortalRoomOccupancyList')?.replaceChildren();
         this.setTeacherPortalMessage('', '');
+        this.renderTeacherProfileView();
         this.renderTeacherPortalAdminPeriodControl();
         if (results) results.innerHTML = '<p class="empty-message">Loading teachers…</p>';
 
@@ -6329,6 +6640,8 @@ class ScheduleManager {
         if (!this.isTeacherPortalAdministrator()) return;
         this.teacherPortalRequestId++;
         this.teacherPortalScheduleRequestId++;
+        this.teacherPortalRoomOccupancyRequestId++;
+        this.teacherPortalRoomOccupancyLoading = false;
         this.invalidateTeacherPortalAdminPeriodRequests();
         this.isPublicTeacherPortal = false;
         this.activeAuthPortal = 'scheduler';
@@ -6363,6 +6676,8 @@ class ScheduleManager {
     returnToStartingPageFromTeacherPortal() {
         this.teacherPortalRequestId++;
         this.teacherPortalScheduleRequestId++;
+        this.teacherPortalRoomOccupancyRequestId++;
+        this.teacherPortalRoomOccupancyLoading = false;
         this.invalidateTeacherPortalAdminPeriodRequests();
         this.isPublicTeacherPortal = false;
         this.activeAuthPortal = null;
